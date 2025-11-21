@@ -22,6 +22,8 @@ export default function Perfil() {
   const [mostrarNovaSenha, setMostrarNovaSenha] = useState(false);
   const [mostrarConfirmarSenha, setMostrarConfirmarSenha] = useState(false);
   const [alterandoSenha, setAlterandoSenha] = useState(false);
+  const [cursoNome, setCursoNome] = useState<string | null>(null);
+  const [campusNome, setCampusNome] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -41,10 +43,14 @@ export default function Perfil() {
           const matriculaExtraida = userEmail.split('@')[0];
           setMatricula(matriculaExtraida);
 
-          // Busca dados com * para ver todas as colunas
+          // Busca dados com relacionamentos
           const { data: userData, error: userError } = await supabase
             .from('usuarios')
-            .select('*')
+            .select(`
+              *,
+              cursos:curso_id(id, nome),
+              campus:campus_id(id, nome)
+            `)
             .eq('email', userEmail)
             .single();
 
@@ -54,6 +60,22 @@ export default function Perfil() {
           if (!userError && userData) {
             if (userData.nome_completo) setNome(userData.nome_completo);
             if (userData.avatar_url) setAvatarUrl(userData.avatar_url);
+            
+            // Buscar nome do curso
+            if (userData.cursos) {
+              const curso = Array.isArray(userData.cursos) ? userData.cursos[0] : userData.cursos;
+              if (curso && typeof curso === 'object' && 'nome' in curso) {
+                setCursoNome(curso.nome as string);
+              }
+            }
+            
+            // Buscar nome do campus
+            if (userData.campus) {
+              const campus = Array.isArray(userData.campus) ? userData.campus[0] : userData.campus;
+              if (campus && typeof campus === 'object' && 'nome' in campus) {
+                setCampusNome(campus.nome as string);
+              }
+            }
           }
         }
       } catch (err) {

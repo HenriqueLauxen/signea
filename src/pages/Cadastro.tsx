@@ -36,7 +36,8 @@ const Cadastro = () => {
     dataNascimento: undefined as Date | undefined,
     email: "",
     matricula: "",
-    campus: "",
+    campusId: "",
+    cursoId: "",
     senha: "",
     confirmarSenha: ""
   });
@@ -45,7 +46,8 @@ const Cadastro = () => {
   const [matriculaConfirmed, setMatriculaConfirmed] = useState(false);
   const [showError, setShowError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [campusOptions, setCampusOptions] = useState<string[]>([]);
+  const [campusOptions, setCampusOptions] = useState<Array<{ id: string; nome: string }>>([]);
+  const [cursosOptions, setCursosOptions] = useState<Array<{ id: string; nome: string }>>([]);
 
   // Preencher email ou matrícula quando vier do login
   useEffect(() => {
@@ -66,28 +68,14 @@ const Cadastro = () => {
       try {
         const { data, error } = await supabase
           .from("campus")
-          .select("nome")
+          .select("id, nome")
           .eq("ativo", true)
           .order("nome", { ascending: true });
 
         if (error) {
           console.error("Erro ao carregar campus:", error);
-          // Fallback caso não consiga carregar
-          setCampusOptions([
-            "Campus Alegrete",
-            "Campus Frederico Westphalen",
-            "Campus Jaguari",
-            "Campus Júlio de Castilhos",
-            "Campus Panambi",
-            "Campus Santa Rosa",
-            "Campus Santo Ângelo",
-            "Campus Santo Augusto",
-            "Campus São Borja",
-            "Campus São Vicente do Sul",
-            "Campus Uruguaiana"
-          ]);
         } else {
-          setCampusOptions(data.map(c => c.nome));
+          setCampusOptions(data || []);
         }
       } catch (err) {
         console.error("Erro ao buscar campus:", err);
@@ -95,6 +83,29 @@ const Cadastro = () => {
     };
 
     loadCampus();
+  }, []);
+
+  // Carregar cursos do banco de dados
+  useEffect(() => {
+    const loadCursos = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("cursos")
+          .select("id, nome")
+          .eq("ativo", true)
+          .order("nome", { ascending: true });
+
+        if (error) {
+          console.error("Erro ao carregar cursos:", error);
+        } else {
+          setCursosOptions(data || []);
+        }
+      } catch (err) {
+        console.error("Erro ao buscar cursos:", err);
+      }
+    };
+
+    loadCursos();
   }, []);
 
   const handleInputChange = (field: string, value: string | Date | undefined) => {
@@ -128,7 +139,7 @@ const Cadastro = () => {
   const handleCadastro = async () => {
     // Validações
     if (!formData.nomeCompleto || !formData.dataNascimento || !formData.email || 
-        !formData.matricula || !formData.campus || !formData.senha || !formData.confirmarSenha) {
+        !formData.matricula || !formData.campusId || !formData.cursoId || !formData.senha || !formData.confirmarSenha) {
       setErrorMessage("Por favor, preencha todos os campos obrigatórios para continuar.");
       setShowError(true);
       return;
@@ -179,7 +190,8 @@ const Cadastro = () => {
           email: formData.email,
           nome_completo: formData.nomeCompleto,
           matricula: formData.matricula,
-          campus: formData.campus,
+          campus_id: formData.campusId,
+          curso_id: formData.cursoId,
           data_nascimento: dataNascimentoStr,
           senha_hash: senhaHash,
           perfil: "user",
@@ -327,31 +339,32 @@ const Cadastro = () => {
                 />
               </div>
 
-              {/* Matrícula e Campus (Grid 2 colunas) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">
-                    Matrícula {matriculaConfirmed && <span className="text-green-500 text-xs">✓ Confirmada</span>}
-                  </label>
-                  <Input
-                    id="matricula-input"
-                    type="text"
-                    placeholder="Sua matrícula"
-                    value={formData.matricula}
-                    onChange={(e) => handleInputChange("matricula", e.target.value)}
-                    onBlur={handleMatriculaBlur}
-                    className="h-12 bg-transparent border-border focus:glow-border-hover"
-                    disabled={loading || matriculaConfirmed}
-                    autoComplete="off"
-                    style={matriculaConfirmed ? { color: 'hsl(var(--foreground))', opacity: 1 } : undefined}
-                  />
-                </div>
+              {/* Matrícula */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Matrícula {matriculaConfirmed && <span className="text-green-500 text-xs">✓ Confirmada</span>}
+                </label>
+                <Input
+                  id="matricula-input"
+                  type="text"
+                  placeholder="Sua matrícula"
+                  value={formData.matricula}
+                  onChange={(e) => handleInputChange("matricula", e.target.value)}
+                  onBlur={handleMatriculaBlur}
+                  className="h-12 bg-transparent border-border focus:glow-border-hover"
+                  disabled={loading || matriculaConfirmed}
+                  autoComplete="off"
+                  style={matriculaConfirmed ? { color: 'hsl(var(--foreground))', opacity: 1 } : undefined}
+                />
+              </div>
 
+              {/* Campus e Curso (Grid 2 colunas) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">Campus</label>
                   <Select
-                    value={formData.campus}
-                    onValueChange={(value) => handleInputChange("campus", value)}
+                    value={formData.campusId}
+                    onValueChange={(value) => handleInputChange("campusId", value)}
                     disabled={loading}
                   >
                     <SelectTrigger className="h-12 bg-transparent border-border focus:glow-border-hover">
@@ -359,8 +372,28 @@ const Cadastro = () => {
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border" side="bottom">
                       {campusOptions.map((campus) => (
-                        <SelectItem key={campus} value={campus}>
-                          {campus}
+                        <SelectItem key={campus.id} value={campus.id}>
+                          {campus.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Curso</label>
+                  <Select
+                    value={formData.cursoId}
+                    onValueChange={(value) => handleInputChange("cursoId", value)}
+                    disabled={loading}
+                  >
+                    <SelectTrigger className="h-12 bg-transparent border-border focus:glow-border-hover">
+                      <SelectValue placeholder="Selecione seu curso" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-border" side="bottom">
+                      {cursosOptions.map((curso) => (
+                        <SelectItem key={curso.id} value={curso.id}>
+                          {curso.nome}
                         </SelectItem>
                       ))}
                     </SelectContent>

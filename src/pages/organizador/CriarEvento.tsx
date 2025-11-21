@@ -8,6 +8,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, Save, Pen, Calendar as CalendarIcon, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { modal } from "@/contexts/ModalContext";
 import { useToast } from "@/contexts/ToastContext";
 import { supabase } from "@/lib/supabase";
@@ -38,6 +39,8 @@ export default function CriarEvento() {
   const [campusOptions, setCampusOptions] = useState<string[]>([]);
   const [coordenadorId, setCoordenadorId] = useState<string>("");
   const [coordenadoresOptions, setCoordenadoresOptions] = useState<Array<{ id: string; nome: string; descricao: string }>>([]);
+  const [cursosSelecionados, setCursosSelecionados] = useState<string[]>([]);
+  const [cursosOptions, setCursosOptions] = useState<Array<{ id: string; nome: string }>>([]);
   const [sala, setSala] = useState("");
   const [capacidadeMaxima, setCapacidadeMaxima] = useState<number>(0);
   const [cargaHoraria, setCargaHoraria] = useState<number>(0);
@@ -100,6 +103,29 @@ export default function CriarEvento() {
     };
 
     loadCoordenadores();
+  }, []);
+
+  // Carregar cursos do banco de dados
+  useEffect(() => {
+    const loadCursos = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("cursos")
+          .select("id, nome")
+          .eq("ativo", true)
+          .order("nome", { ascending: true });
+
+        if (error) {
+          console.error("Erro ao carregar cursos:", error);
+        } else {
+          setCursosOptions(data || []);
+        }
+      } catch (err) {
+        console.error("Erro ao buscar cursos:", err);
+      }
+    };
+
+    loadCursos();
   }, []);
 
   const handleBannerClick = () => {
@@ -336,7 +362,6 @@ export default function CriarEvento() {
           organizador_nome: nomeOrganizador,
           carga_horaria: cargaHoraria || null,
           valor: valor || 0,
-          gera_certificado: geraCertificado,
           coordenador_id: coordenadorId || null,
           banner_url: bannerUrlFinal,
           categoria: categoria?.trim() || null,
@@ -373,6 +398,23 @@ export default function CriarEvento() {
         if (palestrantesError) {
           console.error('Erro ao salvar palestrantes:', palestrantesError);
           modal.warning("Evento criado, mas houve erro ao salvar alguns palestrantes");
+        }
+      }
+
+      // Salvar cursos selecionados
+      if (cursosSelecionados.length > 0 && evento) {
+        const cursosData = cursosSelecionados.map(cursoId => ({
+          evento_id: evento.id,
+          curso_id: cursoId
+        }));
+
+        const { error: cursosError } = await supabase
+          .from('eventos_cursos')
+          .insert(cursosData);
+
+        if (cursosError) {
+          console.error('Erro ao salvar cursos:', cursosError);
+          modal.warning("Evento criado, mas houve erro ao salvar alguns cursos");
         }
       }
 
@@ -778,6 +820,61 @@ export default function CriarEvento() {
               {publicoAlvoPerfil === 'aluno' 
                 ? 'Eventos para alunos aparecem para organizadores também'
                 : 'Eventos para organizadores não aparecem para alunos'}
+            </p>
+          </div>
+
+          {/* Cursos que podem participar */}
+          <div>
+            <Label>Cursos que podem participar (opcional)</Label>
+            <div className="space-y-2">
+              <Select 
+                value="" 
+                onValueChange={(value) => {
+                  if (value && !cursosSelecionados.includes(value)) {
+                    setCursosSelecionados([...cursosSelecionados, value]);
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um curso para adicionar" />
+                </SelectTrigger>
+                <SelectContent>
+                  {cursosOptions
+                    .filter(curso => !cursosSelecionados.includes(curso.id))
+                    .map((curso) => (
+                      <SelectItem key={curso.id} value={curso.id}>
+                        {curso.nome}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              
+              {cursosSelecionados.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {cursosSelecionados.map((cursoId) => {
+                    const curso = cursosOptions.find(c => c.id === cursoId);
+                    return (
+                      <Badge 
+                        key={cursoId} 
+                        variant="outline" 
+                        className="gap-2 pr-1"
+                      >
+                        {curso?.nome}
+                        <button
+                          type="button"
+                          onClick={() => setCursosSelecionados(cursosSelecionados.filter(id => id !== cursoId))}
+                          className="ml-1 hover:text-destructive"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Se nenhum curso for selecionado, o evento estará disponível para todos os cursos
             </p>
           </div>
 

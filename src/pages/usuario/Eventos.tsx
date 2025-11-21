@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Calendar, Clock, Users, Loader2, MapPin, DollarSign, FileText, CheckCircle, X, Filter } from "lucide-react";
+import { Calendar, Clock, Users, Loader2, MapPin, DollarSign, FileText, CheckCircle, X, Filter, GraduationCap, User, Award } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { modal } from "@/contexts/ModalContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -15,17 +15,22 @@ interface Evento {
   id: string;
   titulo: string;
   banner_url: string | null;
+  tipo: string | null;
   data_inicio: string;
   data_fim: string;
   data_encerramento_inscricoes: string | null;
   carga_horaria: number | null;
   local: string;
   campus: string | null;
+  sala: string | null;
   descricao: string;
   vagas_disponiveis: number;
   valor: number | null;
   inscrito?: boolean;
   publico_alvo_perfil?: string;
+  cursos?: Array<{ id: string; nome: string }>;
+  palestrantes?: Array<{ nome: string; tema: string; descricao: string }>;
+  coordenador?: { nome: string; descricao: string } | null;
 }
 
 type FiltroEvento = "todos" | "proximos" | "andamento" | "historico";
@@ -41,33 +46,49 @@ export default function Eventos() {
   const [filtroAtivo, setFiltroAtivo] = useState<FiltroEvento>("todos");
 
   const carregarEventos = useCallback(async () => {
-    console.log('🔄 Carregando eventos... Email:', userEmail);
-    
     if (!userEmail) {
-      console.log('⚠️ Email não disponível ainda');
       setLoading(false);
       return;
     }
     
     try {
       setLoading(true);
-      console.log('📡 Buscando eventos do Supabase...');
       
-      // Obter perfil do usuário
+      // Obter perfil e curso do usuário
       const { data: userProfile } = await supabase
         .from('usuarios')
-        .select('perfil')
+        .select('perfil, curso_id')
         .eq('email', userEmail)
         .single();
 
       const userPerfil = userProfile?.perfil || 'user';
+      const userCursoId = userProfile?.curso_id;
 
       // Filtrar eventos por público-alvo:
       // - Eventos para 'aluno' aparecem para todos (alunos e organizadores)
       // - Eventos para 'organizador' aparecem apenas para organizadores
       let query = supabase
         .from('eventos')
-        .select('id, titulo, banner_url, data_inicio, data_fim, data_encerramento_inscricoes, carga_horaria, local, campus, descricao, vagas_disponiveis, valor, publico_alvo_perfil')
+        .select(`
+          id, 
+          titulo, 
+          banner_url, 
+          tipo,
+          data_inicio, 
+          data_fim, 
+          data_encerramento_inscricoes, 
+          carga_horaria, 
+          local, 
+          campus,
+          sala,
+          descricao, 
+          vagas_disponiveis, 
+          valor, 
+          publico_alvo_perfil,
+          coordenador_id(nome, descricao),
+          eventos_cursos(curso_id),
+          palestrantes(nome, tema, descricao)
+        `)
         .eq('status', 'aprovado');
 
       // Se o usuário é aluno, mostrar apenas eventos para alunos
@@ -83,12 +104,9 @@ export default function Eventos() {
         throw error;
       }
 
-      console.log('✅ Eventos encontrados:', data?.length || 0);
-
       // Verificar quais eventos o usuário já está inscrito
       if (data && data.length > 0) {
         const eventosIds = data.map(e => e.id);
-        console.log('🔍 Verificando inscrições para eventos:', eventosIds);
         
         const { data: inscricoes, error: inscricoesError } = await supabase
           .from('inscricoes')
@@ -100,9 +118,6 @@ export default function Eventos() {
           console.error('❌ Erro ao buscar inscrições:', inscricoesError);
         }
 
-        console.log('📝 Inscrições encontradas:', inscricoes?.length || 0);
-        console.log('📝 Detalhes das inscrições:', inscricoes);
-
         // Considerar inscrito apenas se o status for 'confirmada' (não cancelada)
         const inscritosIds = new Set(
           inscricoes
@@ -110,17 +125,52 @@ export default function Eventos() {
             .map(i => i.evento_id) || []
         );
         
-        console.log('✅ IDs de eventos inscritos:', Array.from(inscritosIds));
+        // Buscar cursos para cada evento
+        const eventosComCursos = await Promise.all(
+          data.map(async (evento: any) => {
+            const { data: cursosData } = await supabase
+              .from('eventos_cursos')
+              .select('curso_id')
+              .eq('evento_id', evento.id);
+            
+            if (!cursosData || cursosData.length === 0) {
+              return {
+                ...evento,
+                cursos: []
+              };
+            }
+            
+            const cursoIds = cursosData.map((ec: any) => ec.curso_id).filter(Boolean);
+            const { data: cursos } = await supabase
+              .from('cursos')
+              .select('id, nome')
+              .in('id', cursoIds);
+            
+            return {
+              ...evento,
+              cursos: cursos || []
+            };
+          })
+        );
         
-        const eventosComInscricao = data.map(evento => ({
+        // Filtrar eventos por curso do usuário
+        const eventosFiltradosPorCurso = eventosComCursos.filter(evento => {
+          // Se o evento não tem cursos específicos, qualquer um pode ver
+          if (evento.cursos.length === 0) return true;
+          
+          // Se o usuário não tem curso, não pode ver eventos com cursos específicos
+          if (!userCursoId) return false;
+          
+          // Verificar se o curso do usuário está na lista
+          return evento.cursos.some((curso: any) => curso.id === userCursoId);
+        });
+        
+        const eventosComInscricao = eventosFiltradosPorCurso.map((evento: any) => ({
           ...evento,
-          inscrito: inscritosIds.has(evento.id)
+          inscrito: inscritosIds.has(evento.id),
+          palestrantes: evento.palestrantes || [],
+          coordenador: evento.coordenador_id || null
         }));
-
-        console.log('📊 Eventos com status de inscrição:', eventosComInscricao.map(e => ({ 
-          titulo: e.titulo, 
-          inscrito: e.inscrito 
-        })));
 
         setEventos(eventosComInscricao);
       } else {
@@ -130,7 +180,6 @@ export default function Eventos() {
       console.error('❌ Erro ao carregar eventos:', error);
       toast.error('Erro ao carregar eventos');
     } finally {
-      console.log('✅ Carregamento finalizado');
       setLoading(false);
     }
   }, [userEmail]);
@@ -139,10 +188,8 @@ export default function Eventos() {
     const obterUsuario = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.email) {
-        console.log('✅ Email do usuário obtido:', session.user.email);
         setUserEmail(session.user.email);
       } else {
-        console.log('⚠️ Nenhuma sessão ativa');
         setLoading(false);
       }
     };

@@ -92,6 +92,7 @@ const App = () => (
               <Route path="/organizador/certificados" element={<ProtectedRoute><OrganizadorLayout><CertificadosOrg /></OrganizadorLayout></ProtectedRoute>} />
               <Route path="/organizador/relatorios" element={<ProtectedRoute><OrganizadorLayout><RelatoriosOrg /></OrganizadorLayout></ProtectedRoute>} />
               <Route path="/organizador/aprovar-eventos" element={<ProtectedRoute><OrganizadorLayout><AprovarEventos /></OrganizadorLayout></ProtectedRoute>} />
+              <Route path="/organizador/perfil" element={<ProtectedRoute><OrganizadorLayout><Perfil /></OrganizadorLayout></ProtectedRoute>} />
               
               
               {/* Campus Routes */}

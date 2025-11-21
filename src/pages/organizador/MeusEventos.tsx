@@ -42,11 +42,27 @@ export default function MeusEventos() {
         return;
       }
 
-      const { data, error } = await supabase
+      // Buscar campus do usuário
+      const { data: userData } = await supabase
+        .from('usuarios')
+        .select('campus')
+        .eq('email', session.user.email)
+        .single();
+
+      const userCampus = userData?.campus;
+
+      // Buscar TODOS os eventos do campus, não apenas os do organizador
+      let query = supabase
         .from('eventos')
         .select('*')
-        .eq('organizador_email', session.user.email)
         .order('created_at', { ascending: false });
+
+      // Se o usuário tem campus definido, filtrar por campus
+      if (userCampus) {
+        query = query.eq('campus', userCampus);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 

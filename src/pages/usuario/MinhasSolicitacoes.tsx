@@ -6,10 +6,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { PlusCircle, FileText, Clock, CheckCircle, XCircle } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PlusCircle, FileText, Clock, CheckCircle, XCircle, Calendar as CalendarIcon } from "lucide-react";
 import { modal } from "@/contexts/ModalContext";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { DateRange } from "react-day-picker";
 
 type Solicitacao = {
   id: string;
@@ -29,10 +35,14 @@ export default function MinhasSolicitacoes() {
   // Form state
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
-  const [dataInicio, setDataInicio] = useState("");
-  const [dataFim, setDataFim] = useState("");
-  const [cargaHoraria, setCargaHoraria] = useState<number | "">("");
-  const [palestrantes, setPalestrantes] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [campus, setCampus] = useState("");
+  const [campusOptions, setCampusOptions] = useState<string[]>([]);
+  const [sala, setSala] = useState("");
+  const [capacidadeMaxima, setCapacidadeMaxima] = useState<number>(0);
+  const [valor, setValor] = useState<number>(0);
+  const [categoria, setCategoria] = useState("");
+  const [publicoAlvoPerfil, setPublicoAlvoPerfil] = useState<string>("aluno");
 
   const getStatusBadge = (status: string) => {
   type StatusConfig = { variant: "outline" | "default" | "destructive"; icon: ComponentType<SVGProps<SVGSVGElement>>; label: string };
@@ -120,6 +130,29 @@ export default function MinhasSolicitacoes() {
     };
   }, []);
 
+  // Carregar campus do banco de dados
+  useEffect(() => {
+    const loadCampus = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("campus")
+          .select("nome")
+          .eq("ativo", true)
+          .order("nome", { ascending: true });
+
+        if (error) {
+          console.error("Erro ao carregar campus:", error);
+        } else {
+          setCampusOptions(data.map(c => c.nome));
+        }
+      } catch (err) {
+        console.error("Erro ao buscar campus:", err);
+      }
+    };
+
+    loadCampus();
+  }, []);
+
   useEffect(() => {
     if (userEmail) {
       carregarSolicitacoes();
@@ -127,8 +160,23 @@ export default function MinhasSolicitacoes() {
   }, [userEmail, carregarSolicitacoes]);
 
   const handleCreateSolicitacao = async () => {
-    if (!titulo || !dataInicio || !dataFim) {
-      modal.error("Preencha título e datas");
+    if (!titulo.trim()) {
+      modal.error("Preencha o título do evento");
+      return;
+    }
+
+    if (!descricao.trim()) {
+      modal.error("Preencha a descrição do evento");
+      return;
+    }
+
+    if (!dateRange?.from || !dateRange?.to) {
+      modal.error("Selecione o período do evento");
+      return;
+    }
+
+    if (!capacidadeMaxima || capacidadeMaxima <= 0) {
+      modal.error("Informe a capacidade máxima (maior que 0)");
       return;
     }
 
@@ -139,16 +187,29 @@ export default function MinhasSolicitacoes() {
         return;
       }
 
+      // Buscar nome do usuário
+      const { data: userData } = await supabase
+        .from('usuarios')
+        .select('nome_completo')
+        .eq('email', session.user.email)
+        .single();
+
       const payload: Record<string, unknown> = {
-        titulo,
-        descricao,
-        data_inicio: new Date(dataInicio).toISOString(),
-        data_fim: new Date(dataFim).toISOString(),
-        carga_horaria: cargaHoraria === "" ? null : Number(cargaHoraria),
-        tags: palestrantes ? palestrantes.split(",").map(p => p.trim()) : [],
+        titulo: titulo.trim(),
+        descricao: descricao.trim(),
+        data_inicio: dateRange.from.toISOString(),
+        data_fim: dateRange.to.toISOString(),
+        campus: campus?.trim() || null,
+        sala: sala?.trim() || null,
+        capacidade_maxima: capacidadeMaxima,
+        vagas_disponiveis: capacidadeMaxima,
+        valor: valor || 0,
+        categoria: categoria?.trim() || null,
+        publico_alvo_perfil: publicoAlvoPerfil || 'aluno',
         organizador_email: session.user.email,
+        organizador_nome: userData?.nome_completo || session.user.email,
         status: "pendente",
-        created_at: new Date().toISOString(),
+        gera_certificado: true, // Certificado é obrigatório
       };
 
       const { error } = await supabase.from("eventos").insert(payload);
@@ -159,10 +220,13 @@ export default function MinhasSolicitacoes() {
       // reset form
       setTitulo("");
       setDescricao("");
-      setDataInicio("");
-      setDataFim("");
-      setCargaHoraria("");
-      setPalestrantes("");
+      setDateRange(undefined);
+      setCampus("");
+      setSala("");
+      setCapacidadeMaxima(0);
+      setValor(0);
+      setCategoria("");
+      setPublicoAlvoPerfil("aluno");
 
       carregarSolicitacoes();
     } catch (err: unknown) {
@@ -244,32 +308,124 @@ export default function MinhasSolicitacoes() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Nome do Evento</Label>
+              <Label>Título do Evento</Label>
               <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex: Workshop de React Avançado" />
             </div>
             <div>
-              <Label>Descrição</Label>
+              <Label>Descrição do Evento</Label>
               <Textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Descreva o evento..." rows={4} />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Período do Evento</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left font-normal"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateRange?.from ? (
+                      dateRange.to ? (
+                        <>
+                          {format(dateRange.from, "dd 'de' MMMM", { locale: ptBR })} -{" "}
+                          {format(dateRange.to, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                        </>
+                      ) : (
+                        format(dateRange.from, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+                      )
+                    ) : (
+                      <span>Selecione o período</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    initialFocus
+                    mode="range"
+                    defaultMonth={dateRange?.from}
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    numberOfMonths={2}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label>Data de Início</Label>
-                <Input value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} type="date" />
+                <Label>Campus (opcional)</Label>
+                <Select value={campus} onValueChange={setCampus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o campus" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">Nenhum</SelectItem>
+                    {campusOptions.map((campusNome) => (
+                      <SelectItem key={campusNome} value={campusNome}>
+                        {campusNome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
-                <Label>Data de Término</Label>
-                <Input value={dataFim} onChange={(e) => setDataFim(e.target.value)} type="date" />
+                <Label>Sala (opcional)</Label>
+                <Input
+                  placeholder="Ex: Sala 201"
+                  value={sala}
+                  onChange={(e) => setSala(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label>Capacidade Máxima</Label>
+                <Input
+                  type="number"
+                  placeholder="Ex: 100"
+                  value={capacidadeMaxima || ""}
+                  onChange={(e) => setCapacidadeMaxima(Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <Label>Valor da Inscrição (R$)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="Ex: 50.00 (0 para gratuito)"
+                  value={valor || ""}
+                  onChange={(e) => setValor(Number(e.target.value))}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Deixe 0 para evento gratuito
+                </p>
               </div>
             </div>
             <div>
-              <Label>Carga Horária (horas)</Label>
-              <Input value={cargaHoraria} onChange={(e) => setCargaHoraria(e.target.value === "" ? "" : Number(e.target.value))} type="number" placeholder="Ex: 40" />
+              <Label>Categoria (opcional)</Label>
+              <Input
+                placeholder="Ex: Tecnologia, Educação, Saúde"
+                value={categoria}
+                onChange={(e) => setCategoria(e.target.value)}
+              />
             </div>
             <div>
-              <Label>Palestrantes (separados por vírgula)</Label>
-              <Input value={palestrantes} onChange={(e) => setPalestrantes(e.target.value)} placeholder="Ex: Dr. João Silva, Profa. Maria Santos" />
+              <Label>Público-Alvo</Label>
+              <Select value={publicoAlvoPerfil} onValueChange={setPublicoAlvoPerfil}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o público-alvo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="aluno">Aluno</SelectItem>
+                  <SelectItem value="organizador">Organizador</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                {publicoAlvoPerfil === 'aluno' 
+                  ? 'Eventos para alunos aparecem para organizadores também'
+                  : 'Eventos para organizadores não aparecem para alunos'}
+              </p>
             </div>
-            <div className="flex gap-2 justify-end">
+            <div className="flex gap-2 justify-end pt-2">
               <Button variant="outline" onClick={() => setShowCreateModal(false)}>
                 Cancelar
               </Button>

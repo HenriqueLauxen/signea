@@ -7,6 +7,7 @@ import {
   DollarSign,
   Award,
   FileCheck,
+  User,
 } from "lucide-react";
 
 const menuItems = [
@@ -17,6 +18,7 @@ const menuItems = [
   { path: "/organizador/presencas", label: "Presenças", icon: CheckCircle },
   { path: "/organizador/pagamentos", label: "Pagamentos", icon: DollarSign },
   { path: "/organizador/certificados", label: "Certificados", icon: Award },
+  { path: "/organizador/perfil", label: "Meu Perfil", icon: User },
 ];
 
 export function OrganizadorSidebar() {
