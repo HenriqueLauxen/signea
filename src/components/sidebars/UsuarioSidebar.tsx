@@ -12,7 +12,7 @@ import {
 
 const menuItems = [
   { path: "/usuario/eventos", label: "Eventos", icon: Calendar },
-  { path: "/usuario/minhas-solicitacoes", label: "Criar evento", icon: Plus },
+  { path: "/usuario/minhas-solicitacoes", label: "Sugerir evento", icon: Plus },
   { path: "/usuario/registrar-presenca", label: "Registrar Presença", icon: QrCode },
   { path: "/usuario/meus-certificados", label: "Meus Certificados", icon: Award },
   { path: "/usuario/perfil", label: "Perfil", icon: User },
@@ -26,10 +26,10 @@ export function UsuarioSidebar() {
       <div className={`${minimizado ? 'p-4' : 'p-6'} flex items-center gap-3`}>
         {!minimizado && (
           <>
-            <img 
-              src="/logo-bgremoved.png" 
-              alt="Logo" 
-              className="w-16 h-16 object-contain"
+            <img
+              src="/logo-bgremoved.png"
+              alt="Logo"
+              className="w-12 h-12 object-contain"
             />
             <h2 className="text-sm font-light text-muted-foreground uppercase tracking-wider">
               Menu Usuário
@@ -37,10 +37,10 @@ export function UsuarioSidebar() {
           </>
         )}
         {minimizado && (
-          <img 
-            src="/logo-bgremoved.png" 
-            alt="Logo" 
-            className="w-20 h-20 object-contain mx-auto"
+          <img
+            src="/logo-bgremoved.png"
+            alt="Logo"
+            className="w-12 h-12 object-contain mx-auto"
           />
         )}
       </div>

@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar, Users, CheckCircle, Clock, MapPin, Loader2, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { modal } from "@/contexts/ModalContext";
+// import { modal } from "@/contexts/ModalContext"; // Removed modal usage
+import { useToast } from "@/contexts/ToastContext";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -28,16 +29,17 @@ interface Evento {
 
 export default function MeusEventos() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [loading, setLoading] = useState(true);
 
   const carregarEventos = async () => {
     try {
       setLoading(true);
-      
+
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user?.email) {
-        modal.error("Você precisa estar logado");
+        toast.error("Você precisa estar logado");
         navigate("/login");
         return;
       }
@@ -69,7 +71,7 @@ export default function MeusEventos() {
       setEventos(data || []);
     } catch (error) {
       console.error('Erro ao carregar eventos:', error);
-      modal.error('Erro ao carregar eventos');
+      toast.error('Erro ao carregar eventos');
     } finally {
       setLoading(false);
     }
@@ -77,7 +79,7 @@ export default function MeusEventos() {
 
   useEffect(() => {
     carregarEventos();
-    
+
     // Real-time subscription
     const channel = supabase
       .channel('meus-eventos-changes')
@@ -163,20 +165,20 @@ export default function MeusEventos() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {eventos.map((evento) => {
             const { ocupadas, percentual } = getVagasInfo(evento);
-            
+
             return (
-              <Card 
-                key={evento.id} 
-                className="overflow-hidden hover:glow-border-hover transition-all cursor-pointer" 
+              <Card
+                key={evento.id}
+                className="overflow-hidden hover:glow-border-hover transition-all cursor-pointer"
                 onClick={() => navigate(`/organizador/evento/${evento.id}`)}
               >
                 {/* Banner */}
-                <div 
+                <div
                   className="w-full h-40 bg-muted bg-cover bg-center"
-                  style={{ 
-                    backgroundImage: evento.banner_url 
-                      ? `url(${evento.banner_url})` 
-                      : 'none' 
+                  style={{
+                    backgroundImage: evento.banner_url
+                      ? `url(${evento.banner_url})`
+                      : 'none'
                   }}
                 >
                   {!evento.banner_url && (
@@ -210,7 +212,7 @@ export default function MeusEventos() {
                         )}
                       </span>
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4" />
                       <span className="line-clamp-1">{evento.local}</span>

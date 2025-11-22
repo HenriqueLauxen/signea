@@ -4,17 +4,33 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Upload, Save, Eye, EyeOff, Lock } from "lucide-react";
-import { modal } from "@/contexts/ModalContext";
+import { Upload, Save, Eye, EyeOff, Lock, Pencil, GraduationCap, MapPin } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+// import { modal } from "@/contexts/ModalContext"; // Removed modal usage
+import { useToast } from "@/contexts/ToastContext";
 import { supabase } from "@/lib/supabase";
 
+interface Campus {
+  id: number;
+  nome: string;
+}
+
+interface Curso {
+  id: number;
+  nome: string;
+}
+
 export default function Perfil() {
+  const toast = useToast();
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [matricula, setMatricula] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // Senha
   const [senhaAtual, setSenhaAtual] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
@@ -22,17 +38,35 @@ export default function Perfil() {
   const [mostrarNovaSenha, setMostrarNovaSenha] = useState(false);
   const [mostrarConfirmarSenha, setMostrarConfirmarSenha] = useState(false);
   const [alterandoSenha, setAlterandoSenha] = useState(false);
-  const [cursoNome, setCursoNome] = useState<string | null>(null);
-  const [campusNome, setCampusNome] = useState<string | null>(null);
+
+  // Dados Acadêmicos
+  const [cursoNome, setCursoNome] = useState<string>("Não informado");
+  const [campusNome, setCampusNome] = useState<string>("Não informado");
+  const [campusId, setCampusId] = useState<number | null>(null);
+  const [cursoId, setCursoId] = useState<number | null>(null);
+
+  // Listas para Selects
+  const [listaCampus, setListaCampus] = useState<Campus[]>([]);
+  const [listaCursos, setListaCursos] = useState<Curso[]>([]);
+
+  // Modais
+  const [showEditNameModal, setShowEditNameModal] = useState(false);
+  const [showEditAcademicModal, setShowEditAcademicModal] = useState(false);
+  const [tempNome, setTempNome] = useState("");
+  const [tempCampusId, setTempCampusId] = useState<string>("");
+  const [tempCursoId, setTempCursoId] = useState<string>("");
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const getUserData = async () => {
       try {
+        setLoading(true);
         const { data: { session }, error } = await supabase.auth.getSession();
-        
+
         if (error) {
-          modal.error("Erro ao carregar dados do usuário");
+          console.error("Erro de sessão:", error);
+          toast.error("Erro ao carregar sessão");
           return;
         }
 
@@ -40,10 +74,8 @@ export default function Perfil() {
           const userEmail = session.user.email;
           setEmail(userEmail);
 
-          const matriculaExtraida = userEmail.split('@')[0];
-          setMatricula(matriculaExtraida);
-
           // Busca dados com relacionamentos
+          // Usando left join para evitar erros se não tiver curso/campus
           const { data: userData, error: userError } = await supabase
             .from('usuarios')
             .select(`
@@ -54,26 +86,40 @@ export default function Perfil() {
             .eq('email', userEmail)
             .single();
 
-          console.log('Dados do usuário:', userData);
-          console.log('Erro:', userError);
+          if (userError) {
+            console.error("Erro ao buscar dados do usuário:", userError);
+            // Tenta buscar sem os joins se falhar
+            const { data: simpleData, error: simpleError } = await supabase
+              .from('usuarios')
+              .select('*')
+              .eq('email', userEmail)
+              .single();
 
-          if (!userError && userData) {
+            if (!simpleError && simpleData) {
+              if (simpleData.nome_completo) setNome(simpleData.nome_completo);
+              if (simpleData.matricula) setMatricula(simpleData.matricula);
+              if (simpleData.avatar_url) setAvatarUrl(simpleData.avatar_url);
+            }
+          } else if (userData) {
             if (userData.nome_completo) setNome(userData.nome_completo);
+            if (userData.matricula) setMatricula(userData.matricula);
             if (userData.avatar_url) setAvatarUrl(userData.avatar_url);
-            
-            // Buscar nome do curso
+
+            // Buscar dados do curso
             if (userData.cursos) {
               const curso = Array.isArray(userData.cursos) ? userData.cursos[0] : userData.cursos;
-              if (curso && typeof curso === 'object' && 'nome' in curso) {
-                setCursoNome(curso.nome as string);
+              if (curso) {
+                setCursoNome(curso.nome);
+                setCursoId(curso.id);
               }
             }
-            
-            // Buscar nome do campus
+
+            // Buscar dados do campus
             if (userData.campus) {
               const campus = Array.isArray(userData.campus) ? userData.campus[0] : userData.campus;
-              if (campus && typeof campus === 'object' && 'nome' in campus) {
-                setCampusNome(campus.nome as string);
+              if (campus) {
+                setCampusNome(campus.nome);
+                setCampusId(campus.id);
               }
             }
           }
@@ -86,7 +132,16 @@ export default function Perfil() {
     };
 
     getUserData();
+    fetchCampusAndCursos();
   }, []);
+
+  const fetchCampusAndCursos = async () => {
+    const { data: campusData } = await supabase.from('campus').select('id, nome').order('nome');
+    if (campusData) setListaCampus(campusData);
+
+    const { data: cursosData } = await supabase.from('cursos').select('id, nome').order('nome');
+    if (cursosData) setListaCursos(cursosData);
+  };
 
   const handlePhotoClick = () => {
     fileInputRef.current?.click();
@@ -97,12 +152,12 @@ export default function Perfil() {
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      modal.error("Por favor, selecione uma imagem");
+      toast.error("Por favor, selecione uma imagem");
       return;
     }
 
     if (file.size > 2 * 1024 * 1024) {
-      modal.error("A imagem deve ter no máximo 2MB");
+      toast.error("A imagem deve ter no máximo 2MB");
       return;
     }
 
@@ -120,110 +175,144 @@ export default function Perfil() {
           upsert: true
         });
 
-      if (uploadError) {
-        throw uploadError;
-      }
+      if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage
         .from('perfil')
         .getPublicUrl(filePath);
 
+      // Atualiza no banco
+      const { error: updateError } = await supabase
+        .from('usuarios')
+        .update({ avatar_url: publicUrl })
+        .eq('email', email);
+
+      if (updateError) throw updateError;
+
       setAvatarUrl(publicUrl);
-      modal.success("Foto alterada com sucesso!");
+      toast.success("Foto alterada com sucesso!");
     } catch (error: any) {
       console.error('Erro ao fazer upload:', error);
-      modal.error(error.message || "Erro ao alterar foto");
+      toast.error(error.message || "Erro ao alterar foto");
     } finally {
       setUploadingPhoto(false);
     }
   };
 
-  const handleSave = async () => {
-    if (!nome.trim()) {
-      modal.error("Por favor, preencha seu nome");
+  const handleOpenEditName = () => {
+    setTempNome(nome);
+    setShowEditNameModal(true);
+  };
+
+  const handleSaveName = async () => {
+    if (!tempNome.trim()) {
+      toast.error("O nome não pode estar vazio");
       return;
     }
 
     try {
       const { error } = await supabase
         .from('usuarios')
-        .upsert({
-          email: email,
-          nome_completo: nome,
-          avatar_url: avatarUrl || null
-        }, {
-          onConflict: 'email'
-        });
+        .update({ nome_completo: tempNome })
+        .eq('email', email);
 
-      if (error) {
-        console.error('Erro detalhado:', error);
-        throw error;
+      if (error) throw error;
+
+      setNome(tempNome);
+      toast.success("Nome atualizado com sucesso!");
+      setShowEditNameModal(false);
+    } catch (error: any) {
+      console.error("Erro ao salvar nome:", error);
+      toast.error("Erro ao atualizar nome");
+    }
+  };
+
+  const handleOpenEditAcademic = () => {
+    setTempCampusId(campusId?.toString() || "");
+    setTempCursoId(cursoId?.toString() || "");
+    setShowEditAcademicModal(true);
+  };
+
+  const handleSaveAcademic = async () => {
+    try {
+      const updates: any = {};
+      if (tempCampusId) updates.campus_id = parseInt(tempCampusId);
+      if (tempCursoId) updates.curso_id = parseInt(tempCursoId);
+
+      const { error } = await supabase
+        .from('usuarios')
+        .update(updates)
+        .eq('email', email);
+
+      if (error) throw error;
+
+      // Atualiza estado local
+      if (tempCampusId) {
+        const campus = listaCampus.find(c => c.id === parseInt(tempCampusId));
+        if (campus) {
+          setCampusNome(campus.nome);
+          setCampusId(campus.id);
+        }
       }
 
-      modal.success("Perfil atualizado com sucesso!");
+      if (tempCursoId) {
+        const curso = listaCursos.find(c => c.id === parseInt(tempCursoId));
+        if (curso) {
+          setCursoNome(curso.nome);
+          setCursoId(curso.id);
+        }
+      }
+
+      toast.success("Dados acadêmicos atualizados!");
+      setShowEditAcademicModal(false);
     } catch (error: any) {
-      console.error("Erro ao salvar:", error);
-      modal.error(error.message || "Erro ao salvar alterações");
+      console.error("Erro ao salvar dados acadêmicos:", error);
+      toast.error("Erro ao atualizar dados");
     }
   };
 
   const handleAlterarSenha = async () => {
-    if (!senhaAtual) {
-      modal.error("Digite sua senha atual");
-      return;
-    }
-
-    if (!novaSenha) {
-      modal.error("Digite a nova senha");
+    if (!senhaAtual || !novaSenha) {
+      toast.error("Preencha todos os campos de senha");
       return;
     }
 
     if (novaSenha.length < 6) {
-      modal.error("A senha deve ter no mínimo 6 caracteres");
+      toast.error("A senha deve ter no mínimo 6 caracteres");
       return;
     }
 
     if (novaSenha !== confirmarSenha) {
-      modal.error("As senhas não coincidem");
+      toast.error("As senhas não coincidem");
       return;
     }
 
     try {
       setAlterandoSenha(true);
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.email) {
-        modal.error("Você precisa estar logado");
-        return;
-      }
-
-      // Tentar reautenticar com a senha atual primeiro
       const { error: reauthError } = await supabase.auth.signInWithPassword({
-        email: session.user.email,
+        email: email,
         password: senhaAtual,
       });
 
       if (reauthError) {
-        modal.error("Senha atual incorreta");
+        toast.error("Senha atual incorreta");
         return;
       }
 
-      // Se reautenticou, atualizar senha
       const { error: updateError } = await supabase.auth.updateUser({
         password: novaSenha
       });
 
-      if (updateError) {
-        throw updateError;
-      }
+      if (updateError) throw updateError;
 
-      modal.success("Senha alterada com sucesso!");
+      toast.success("Senha alterada com sucesso!");
       setSenhaAtual("");
       setNovaSenha("");
       setConfirmarSenha("");
     } catch (error: any) {
       console.error("Erro ao alterar senha:", error);
-      modal.error(error.message || "Erro ao alterar senha");
+      toast.error(error.message || "Erro ao alterar senha");
     } finally {
       setAlterandoSenha(false);
     }
@@ -246,13 +335,13 @@ export default function Perfil() {
       <Card className="p-8">
         <div className="flex flex-col items-center gap-6 mb-8">
           <Avatar className="w-32 h-32">
-            <AvatarImage 
+            <AvatarImage
               src={avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`}
               className="object-cover"
             />
             <AvatarFallback>{getInitials()}</AvatarFallback>
           </Avatar>
-          
+
           <input
             ref={fileInputRef}
             type="file"
@@ -260,10 +349,10 @@ export default function Perfil() {
             onChange={handlePhotoChange}
             className="hidden"
           />
-          
-          <Button 
-            variant="outline" 
-            size="sm" 
+
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handlePhotoClick}
             disabled={uploadingPhoto}
           >
@@ -272,30 +361,55 @@ export default function Perfil() {
           </Button>
         </div>
 
-        <div className="space-y-4">
-          <div>
+        <div className="space-y-6">
+          {/* Nome Completo */}
+          <div className="space-y-2">
             <Label>Nome Completo</Label>
-            <Input 
-              value={nome} 
-              onChange={(e) => setNome(e.target.value)}
-              placeholder="Digite seu nome completo"
-            />
+            <div className="flex gap-2">
+              <Input value={nome} disabled className="bg-muted/50" />
+              <Button variant="outline" size="icon" onClick={handleOpenEditName}>
+                <Pencil className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
 
-          <div>
-            <Label>E-mail Institucional</Label>
-            <Input value={email} disabled />
+          {/* E-mail e Matrícula */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>E-mail Institucional</Label>
+              <Input value={email} disabled className="bg-muted/50" />
+            </div>
+            <div className="space-y-2">
+              <Label>Matrícula</Label>
+              <Input value={matricula} disabled className="bg-muted/50" />
+            </div>
           </div>
 
-          <div>
-            <Label>Matrícula</Label>
-            <Input value={matricula} disabled />
+          {/* Campus e Curso */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <MapPin className="w-4 h-4" /> Campus
+              </Label>
+              <div className="flex gap-2">
+                <Input value={campusNome} disabled className="bg-muted/50" />
+                <Button variant="outline" size="icon" onClick={handleOpenEditAcademic}>
+                  <Pencil className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <GraduationCap className="w-4 h-4" /> Curso
+              </Label>
+              <div className="flex gap-2">
+                <Input value={cursoNome} disabled className="bg-muted/50" />
+                <Button variant="outline" size="icon" onClick={handleOpenEditAcademic}>
+                  <Pencil className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
           </div>
-
-          <Button variant="elegant" onClick={handleSave} className="w-full">
-            <Save className="w-4 h-4 mr-2" />
-            Salvar Alterações
-          </Button>
         </div>
       </Card>
 
@@ -323,11 +437,7 @@ export default function Perfil() {
                 className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                 onClick={() => setMostrarSenhaAtual(!mostrarSenhaAtual)}
               >
-                {mostrarSenhaAtual ? (
-                  <EyeOff className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <Eye className="w-4 h-4 text-muted-foreground" />
-                )}
+                {mostrarSenhaAtual ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </Button>
             </div>
           </div>
@@ -348,11 +458,7 @@ export default function Perfil() {
                 className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                 onClick={() => setMostrarNovaSenha(!mostrarNovaSenha)}
               >
-                {mostrarNovaSenha ? (
-                  <EyeOff className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <Eye className="w-4 h-4 text-muted-foreground" />
-                )}
+                {mostrarNovaSenha ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </Button>
             </div>
           </div>
@@ -373,11 +479,7 @@ export default function Perfil() {
                 className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                 onClick={() => setMostrarConfirmarSenha(!mostrarConfirmarSenha)}
               >
-                {mostrarConfirmarSenha ? (
-                  <EyeOff className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <Eye className="w-4 h-4 text-muted-foreground" />
-                )}
+                {mostrarConfirmarSenha ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </Button>
             </div>
           </div>
@@ -388,17 +490,79 @@ export default function Perfil() {
             disabled={alterandoSenha}
             className="w-full"
           >
-            {alterandoSenha ? (
-              "Alterando..."
-            ) : (
-              <>
-                <Lock className="w-4 h-4 mr-2" />
-                Alterar Senha
-              </>
-            )}
+            {alterandoSenha ? "Alterando..." : "Alterar Senha"}
           </Button>
         </div>
       </Card>
+
+      {/* Modal Editar Nome */}
+      <Dialog open={showEditNameModal} onOpenChange={setShowEditNameModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Nome</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Nome Completo</Label>
+              <Input
+                value={tempNome}
+                onChange={(e) => setTempNome(e.target.value)}
+                placeholder="Digite seu nome completo"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditNameModal(false)}>Cancelar</Button>
+            <Button onClick={handleSaveName}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Editar Dados Acadêmicos */}
+      <Dialog open={showEditAcademicModal} onOpenChange={setShowEditAcademicModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Dados Acadêmicos</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Campus</Label>
+              <Select value={tempCampusId} onValueChange={setTempCampusId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione seu campus" />
+                </SelectTrigger>
+                <SelectContent>
+                  {listaCampus.map((campus) => (
+                    <SelectItem key={campus.id} value={campus.id.toString()}>
+                      {campus.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Curso</Label>
+              <Select value={tempCursoId} onValueChange={setTempCursoId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione seu curso" />
+                </SelectTrigger>
+                <SelectContent>
+                  {listaCursos.map((curso) => (
+                    <SelectItem key={curso.id} value={curso.id.toString()}>
+                      {curso.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditAcademicModal(false)}>Cancelar</Button>
+            <Button onClick={handleSaveAcademic}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

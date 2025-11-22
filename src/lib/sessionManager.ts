@@ -9,7 +9,7 @@ export const checkSession = async (): Promise<boolean> => {
   try {
     // Primeiro verifica sessão do Supabase Auth
     const { data: { session } } = await supabase.auth.getSession();
-    
+
     if (session) {
       // Atualiza a atividade
       await updateActivity(session.user.email || "");
@@ -24,18 +24,19 @@ export const checkSession = async (): Promise<boolean> => {
       return false;
     }
 
-    // Verifica se a sessão ainda é válida no banco
-    const { data: usuario, error } = await supabase
-      .from("usuarios")
-      .select("session_token, session_expires_at, last_activity_at, email_confirmado")
-      .eq("email", sessionEmail)
-      .eq("session_token", sessionToken)
-      .single();
+    // Verifica se a sessão ainda é válida no banco usando RPC (bypassing RLS)
+    const { data: usuarios, error } = await supabase
+      .rpc('validate_session', {
+        p_email: sessionEmail,
+        p_token: sessionToken
+      });
 
-    if (error || !usuario) {
+    if (error || !usuarios || usuarios.length === 0) {
       clearSession();
       return false;
     }
+
+    const usuario = usuarios[0];
 
     // Verifica se o e-mail está confirmado
     if (usuario.email_confirmado === false) {
@@ -80,20 +81,17 @@ export const checkSession = async (): Promise<boolean> => {
 export const updateActivity = async (email: string) => {
   try {
     const sessionToken = localStorage.getItem("session_token");
-    
+
     if (!sessionToken) return;
 
     const now = new Date();
     const newExpiresAt = new Date(now.getTime() + SESSION_TIMEOUT);
 
     await supabase
-      .from("usuarios")
-      .update({
-        last_activity_at: now.toISOString(),
-        session_expires_at: newExpiresAt.toISOString()
-      })
-      .eq("email", email)
-      .eq("session_token", sessionToken);
+      .rpc('update_session_activity', {
+        p_email: email,
+        p_token: sessionToken
+      });
   } catch (err) {
     console.error("Erro ao atualizar atividade:", err);
   }
@@ -122,6 +120,8 @@ export const clearSessionInDB = async (email: string) => {
 export const clearSession = () => {
   localStorage.removeItem("session_token");
   localStorage.removeItem("session_email");
+  // Also clear any other potential auth items
+  localStorage.removeItem("supabase.auth.token");
 };
 
 /**
@@ -130,18 +130,24 @@ export const clearSession = () => {
 export const logout = async () => {
   try {
     const sessionEmail = localStorage.getItem("session_email");
-    
+
     // Limpa sessão customizada
     if (sessionEmail) {
       await clearSessionInDB(sessionEmail);
     }
-    
+
     clearSession();
-    
+
     // Limpa sessão do Supabase Auth
     await supabase.auth.signOut();
+
+    // Force reload to clear any in-memory state
+    window.location.href = "/login";
   } catch (err) {
     console.error("Erro ao fazer logout:", err);
+    // Force logout anyway
+    clearSession();
+    window.location.href = "/login";
   }
 };
 
@@ -151,16 +157,25 @@ export const logout = async () => {
  */
 export const startActivityMonitoring = () => {
   let activityTimeout: NodeJS.Timeout;
+  let lastUpdate = Date.now();
+  const UPDATE_INTERVAL = 5 * 60 * 1000; // Atualizar no banco a cada 5 minutos
 
-  const resetActivityTimer = async () => {
+  const handleActivity = async () => {
+    // Limpa o timeout de logout
     clearTimeout(activityTimeout);
-    
-    const sessionEmail = localStorage.getItem("session_email");
-    if (sessionEmail) {
-      await updateActivity(sessionEmail);
+
+    // Verifica se precisa atualizar no banco (throttle)
+    const now = Date.now();
+    if (now - lastUpdate > UPDATE_INTERVAL) {
+      lastUpdate = now;
+      const sessionEmail = localStorage.getItem("session_email");
+      if (sessionEmail) {
+        // Não aguarda o update para não bloquear a UI
+        updateActivity(sessionEmail).catch(console.error);
+      }
     }
 
-    // Define timeout para verificar inatividade
+    // Reinicia o timeout de logout
     activityTimeout = setTimeout(async () => {
       const isValid = await checkSession();
       if (!isValid) {
@@ -171,20 +186,29 @@ export const startActivityMonitoring = () => {
 
   // Eventos que indicam atividade do usuário
   const events = ["mousedown", "keydown", "scroll", "touchstart", "click"];
-  
+
+  // Usa um debounce leve para os eventos de alta frequência
+  let debounceTimer: NodeJS.Timeout;
+  const onUserActivity = () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(handleActivity, 1000);
+  };
+
   events.forEach(event => {
-    document.addEventListener(event, resetActivityTimer, { passive: true });
+    document.addEventListener(event, onUserActivity, { passive: true });
   });
 
   // Inicia o timer
-  resetActivityTimer();
+  handleActivity();
 
   // Retorna função para limpar os listeners
   return () => {
     clearTimeout(activityTimeout);
+    clearTimeout(debounceTimer);
     events.forEach(event => {
-      document.removeEventListener(event, resetActivityTimer);
+      document.removeEventListener(event, onUserActivity);
     });
   };
 };
+
 

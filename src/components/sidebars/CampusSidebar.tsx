@@ -3,20 +3,17 @@ import {
   Building,
   Calendar,
   Users,
-  Award,
-  ShieldCheck,
-  Settings,
   UserCog,
+  LayoutDashboard,
+  FileText,
 } from "lucide-react";
 
 const menuItems = [
-  { path: "/campus/visao-geral", label: "Visão Geral", icon: Building },
-  { path: "/campus/eventos", label: "Eventos do Campus", icon: Calendar },
-  { path: "/campus/usuarios", label: "Usuários", icon: Users },
-  { path: "/campus/certificados", label: "Certificados", icon: Award },
-  { path: "/campus/auditoria", label: "Auditoria", icon: ShieldCheck },
+  { icon: LayoutDashboard, label: "Visão Geral", path: "/campus/visao-geral" },
+  { icon: Calendar, label: "Eventos", path: "/campus/eventos" },
+  { icon: Users, label: "Usuários", path: "/campus/usuarios" },
+  { icon: FileText, label: "Certificados", path: "/campus/certificados" },
   { path: "/campus/coordenadores", label: "Coordenadores", icon: UserCog },
-  { path: "/campus/configuracoes", label: "Configurações", icon: Settings },
 ];
 
 export function CampusSidebar() {

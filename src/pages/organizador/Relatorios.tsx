@@ -4,14 +4,14 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
-  BarChart3, 
-  Users, 
-  Calendar, 
-  Award, 
-  TrendingUp, 
-  Download, 
-  CheckCircle2, 
+import {
+  BarChart3,
+  Users,
+  Calendar,
+  Award,
+  TrendingUp,
+  Download,
+  CheckCircle2,
   XCircle,
   Clock,
   Loader2,
@@ -55,7 +55,7 @@ export default function Relatorios() {
     try {
       setLoading(true);
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
+
       if (sessionError || !session?.user?.email) {
         modal.error('Você precisa estar logado');
         setLoading(false);
@@ -77,7 +77,6 @@ export default function Relatorios() {
       }
 
       if (!eventosData || eventosData.length === 0) {
-        toast.info('Você ainda não criou nenhum evento');
         setEventos([]);
         setLoading(false);
         return;
@@ -142,8 +141,8 @@ export default function Relatorios() {
     carregarDados();
   }, [carregarDados]);
 
-  const eventosFiltrados = eventoSelecionado === 'todos' 
-    ? eventos 
+  const eventosFiltrados = eventoSelecionado === 'todos'
+    ? eventos
     : eventos.filter(e => e.id === eventoSelecionado);
 
   const totais = eventosFiltrados.reduce((acc, evento) => ({
@@ -226,8 +225,8 @@ export default function Relatorios() {
               </SelectContent>
             </Select>
           </div>
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={exportarRelatorio}
             disabled={eventosFiltrados.length === 0}
           >
@@ -298,8 +297,8 @@ export default function Relatorios() {
         <div className="space-y-4">
           {eventosFiltrados.map((evento) => {
             const taxaOcupacao = ((evento.capacidade_maxima - evento.vagas_disponiveis) / evento.capacidade_maxima) * 100;
-            const taxaComparecimento = evento.totalInscritos > 0 
-              ? (evento.participantesComPresenca / evento.inscritosConfirmados) * 100 
+            const taxaComparecimento = evento.totalInscritos > 0
+              ? (evento.participantesComPresenca / evento.inscritosConfirmados) * 100
               : 0;
 
             return (
@@ -313,9 +312,9 @@ export default function Relatorios() {
                         <Badge
                           variant={
                             evento.status === 'aprovado' ? 'default' :
-                            evento.status === 'pendente' ? 'outline' :
-                            evento.status === 'finalizado' ? 'secondary' :
-                            'destructive'
+                              evento.status === 'pendente' ? 'outline' :
+                                evento.status === 'finalizado' ? 'secondary' :
+                                  'destructive'
                           }
                         >
                           {evento.status}
@@ -405,7 +404,7 @@ export default function Relatorios() {
                         <span>{taxaOcupacao.toFixed(1)}%</span>
                       </div>
                       <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div 
+                        <div
                           className="h-full bg-blue-500 transition-all"
                           style={{ width: `${taxaOcupacao}%` }}
                         />
@@ -417,7 +416,7 @@ export default function Relatorios() {
                         <span>{taxaComparecimento.toFixed(1)}%</span>
                       </div>
                       <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div 
+                        <div
                           className="h-full bg-green-500 transition-all"
                           style={{ width: `${taxaComparecimento}%` }}
                         />

@@ -34,9 +34,9 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
           // Não está autenticado
           setIsAuthenticated(false);
           setIsChecking(false);
-          
+
           // Redireciona para login salvando a rota tentada (sem mostrar modal)
-          navigate("/login", { 
+          navigate("/login", {
             replace: true,
             state: { from: location.pathname }
           });
@@ -44,7 +44,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
           // Está autenticado
           setIsAuthenticated(true);
           setIsChecking(false);
-          
+
           // Inicia monitoramento de atividade
           cleanupActivity = startActivityMonitoring();
         }
@@ -53,6 +53,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         if (mounted) {
           setIsAuthenticated(false);
           setIsChecking(false);
+          navigate("/login", { replace: true });
         }
       }
     };
@@ -64,26 +65,41 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
       async (event, session) => {
         if (!mounted) return;
 
-        if (event === "SIGNED_OUT" || !session) {
+        if (event === "SIGNED_OUT") {
           setIsAuthenticated(false);
-          modal.info("Sessão encerrada. Faça login novamente.");
           navigate("/login", { replace: true });
         } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-          setIsAuthenticated(true);
-          
-          // Inicia monitoramento de atividade
-          if (cleanupActivity) cleanupActivity();
-          cleanupActivity = startActivityMonitoring();
+          // Re-verifica sessão completa para garantir
+          const isValid = await checkSession();
+          if (isValid) {
+            setIsAuthenticated(true);
+            // Reinicia monitoramento
+            if (cleanupActivity) cleanupActivity();
+            cleanupActivity = startActivityMonitoring();
+          }
         }
       }
     );
+
+    // Timeout de segurança para não ficar carregando infinitamente
+    const timeoutId = setTimeout(() => {
+      if (mounted && isChecking) {
+        console.warn("Timeout na verificação de autenticação");
+        setIsChecking(false);
+        if (isAuthenticated === null) {
+          setIsAuthenticated(false);
+          navigate("/login", { replace: true });
+        }
+      }
+    }, 10000); // 10 segundos de timeout
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
       if (cleanupActivity) cleanupActivity();
+      clearTimeout(timeoutId);
     };
-  }, [navigate, location.pathname]);
+  }, [navigate, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Enquanto verifica, mostra loading
   if (isChecking) {

@@ -5,48 +5,116 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calendar, QrCode, Users, DollarSign, Award, BarChart, Eye, EyeOff } from "lucide-react";
+import { Calendar, QrCode, Users, BarChart, Eye, EyeOff, CheckCircle2, XCircle, Clock, Loader2, Download } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { modal } from "@/contexts/ModalContext";
-
-const mockPresencas = [
-  { dia: "Segunda", alunos: [
-    { nome: "João Silva", matricula: "20251234", hora: "09:00", status: "presente" },
-    { nome: "Maria Santos", matricula: "20251235", hora: "09:15", status: "presente" },
-  ]},
-  { dia: "Terça", alunos: [
-    { nome: "João Silva", matricula: "20251234", hora: "09:05", status: "presente" },
-  ]},
-];
-
-const mockInscricoes = [
-  { id: 1, nome: "João Silva", matricula: "20251234", inscricaoStatus: "confirmada", pagamentoStatus: "aprovado" },
-  { id: 2, nome: "Maria Santos", matricula: "20251235", inscricaoStatus: "confirmada", pagamentoStatus: "pendente" },
-  { id: 3, nome: "Pedro Costa", matricula: "20251236", inscricaoStatus: "pendente", pagamentoStatus: "pendente" },
-];
+import { useToast } from "@/contexts/ToastContext";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import {
+  useEvento,
+  useInscricoes,
+  usePresencas,
+  useCertificados,
+  useUpdatePagamento,
+  useTogglePresenca
+} from "@/hooks/useEventoDetalhes";
 
 export default function EventoDetalhes() {
   const { id } = useParams();
+  const toast = useToast();
+
+  // React Query Hooks
+  const { data: evento, isLoading: loadingEvento } = useEvento(id);
+  const { data: inscricoes = [], isLoading: loadingInscricoes } = useInscricoes(id);
+  const { data: presencas = [], isLoading: loadingPresencas } = usePresencas(id);
+  const { data: certificados = [], isLoading: loadingCertificados } = useCertificados(id);
+
+  const updatePagamento = useUpdatePagamento();
+  const togglePresencaMutation = useTogglePresenca();
+
+  // UI States
   const [showQRModal, setShowQRModal] = useState(false);
   const [showKey, setShowKey] = useState(false);
-  const [selectedDia, setSelectedDia] = useState("Segunda");
-  const [statusFilter, setStatusFilter] = useState("todos");
+  const [selectedDia, setSelectedDia] = useState<number>(1);
+  // const [statusFilter, setStatusFilter] = useState("todos"); // This state was not used in the original code, keeping it commented out.
+
+  const loading = loadingEvento || loadingInscricoes || loadingPresencas || loadingCertificados;
 
   const handleGerarQR = () => {
     setShowQRModal(true);
-    modal.success("QR Code gerado com sucesso!");
+    toast.success("QR Code gerado com sucesso!");
   };
 
-  const handleValidarPagamento = (id: number) => {
-    modal.success("Pagamento validado!");
+  const handleValidarPagamento = async (pagamentoId: string, novoStatus: 'aprovado' | 'rejeitado') => {
+    try {
+      await updatePagamento.mutateAsync({ id: pagamentoId, status: novoStatus });
+      toast.success(`Pagamento ${novoStatus} com sucesso!`);
+    } catch (error) {
+      console.error('Erro ao atualizar pagamento:', error);
+      toast.error('Erro ao atualizar pagamento');
+    }
   };
+
+  const handleTogglePresenca = async (email: string, dia: number, nome: string) => {
+    try {
+      const isPresente = presencas.some(p => p.usuario_email === email && p.dia_evento === dia);
+      await togglePresencaMutation.mutateAsync({
+        eventoId: id!,
+        email,
+        dia,
+        nome,
+        isPresente
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar presença:', error);
+      toast.error('Erro ao atualizar presença');
+    }
+  };
+
+  const handleEmitirCertificados = async () => {
+    // Lógica simplificada: emitir para quem tem presença (exemplo)
+    // Em um cenário real, validaria % de presença
+    toast.success("Funcionalidade de emissão em massa em desenvolvimento");
+  };
+
+  const getDiasEvento = () => {
+    if (!evento) return [];
+    const inicio = new Date(evento.data_inicio);
+    const fim = new Date(evento.data_fim);
+    const diffTime = Math.abs(fim.getTime() - inicio.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    // Se for mesmo dia, diffDays é 0 ou 1 dependendo da hora, vamos assumir pelo menos 1 dia
+    const dias = [];
+    for (let i = 0; i <= diffDays; i++) {
+      dias.push(i + 1);
+    }
+    return dias.length > 0 ? dias : [1];
+  };
+
+  const isPresente = (email: string, dia: number) => {
+    return presencas.some(p => p.usuario_email === email && p.dia_evento === dia);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!evento) return <div>Evento não encontrado</div>;
+
+  const dias = getDiasEvento();
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-light">Semana de Tecnologia 2025</h1>
-        <Badge>12-16/01/2025</Badge>
+        <h1 className="text-3xl font-light">{evento.titulo}</h1>
+        <Badge>
+          {format(new Date(evento.data_inicio), "dd/MM", { locale: ptBR })} - {format(new Date(evento.data_fim), "dd/MM/yyyy", { locale: ptBR })}
+        </Badge>
       </div>
 
       <Tabs defaultValue="presencas" className="w-full">
@@ -60,28 +128,18 @@ export default function EventoDetalhes() {
         <TabsContent value="presencas" className="space-y-4">
           <div className="flex justify-between items-center">
             <div className="flex gap-2">
-              {mockPresencas.map((p) => (
+              {dias.map((dia) => (
                 <Button
-                  key={p.dia}
-                  variant={selectedDia === p.dia ? "default" : "outline"}
+                  key={dia}
+                  variant={selectedDia === dia ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setSelectedDia(p.dia)}
+                  onClick={() => setSelectedDia(dia)}
                 >
-                  {p.dia}
+                  Dia {dia}
                 </Button>
               ))}
             </div>
             <div className="flex gap-2">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="presente">Presente</SelectItem>
-                  <SelectItem value="ausente">Ausente</SelectItem>
-                </SelectContent>
-              </Select>
               <Button variant="elegant" onClick={handleGerarQR}>
                 <QrCode className="w-4 h-4 mr-2" />
                 Gerar QR Code
@@ -91,24 +149,28 @@ export default function EventoDetalhes() {
 
           <Card className="p-6">
             <div className="space-y-3">
-              {mockPresencas
-                .find((p) => p.dia === selectedDia)
-                ?.alunos.map((aluno, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                    <div className="flex items-center gap-4">
-                      <Checkbox defaultChecked={aluno.status === "presente"} />
-                      <div>
-                        <p className="font-normal">{aluno.nome}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {aluno.matricula} - {aluno.hora}
-                        </p>
-                      </div>
+              {inscricoes.map((inscricao: any) => (
+                <div key={inscricao.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                  <div className="flex items-center gap-4">
+                    <Checkbox
+                      checked={isPresente(inscricao.usuario_email, selectedDia)}
+                      onCheckedChange={() => handleTogglePresenca(inscricao.usuario_email, selectedDia, inscricao.usuarios?.nome_completo || inscricao.usuario_email)}
+                    />
+                    <div>
+                      <p className="font-normal">{inscricao.usuarios?.nome_completo || "Nome não informado"}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {inscricao.usuarios?.matricula || "Matrícula N/A"} - {inscricao.usuario_email}
+                      </p>
                     </div>
-                    <Badge variant={aluno.status === "presente" ? "default" : "outline"}>
-                      {aluno.status}
-                    </Badge>
                   </div>
-                ))}
+                  <Badge variant={isPresente(inscricao.usuario_email, selectedDia) ? "default" : "outline"}>
+                    {isPresente(inscricao.usuario_email, selectedDia) ? "Presente" : "Ausente"}
+                  </Badge>
+                </div>
+              ))}
+              {inscricoes.length === 0 && (
+                <p className="text-center text-muted-foreground py-4">Nenhum inscrito neste evento.</p>
+              )}
             </div>
           </Card>
         </TabsContent>
@@ -116,44 +178,92 @@ export default function EventoDetalhes() {
         <TabsContent value="inscricoes" className="space-y-4">
           <Card className="p-6">
             <div className="space-y-3">
-              {mockInscricoes.map((inscricao) => (
+              {inscricoes.map((inscricao: any) => (
                 <div key={inscricao.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                   <div>
-                    <p className="font-normal">{inscricao.nome}</p>
-                    <p className="text-sm text-muted-foreground">{inscricao.matricula}</p>
+                    <p className="font-normal">{inscricao.usuarios?.nome_completo || "Nome não informado"}</p>
+                    <p className="text-sm text-muted-foreground">{inscricao.usuario_email}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={inscricao.inscricaoStatus === "confirmada" ? "default" : "outline"}>
-                      {inscricao.inscricaoStatus}
+                    <Badge variant={inscricao.status === "confirmada" ? "default" : "outline"}>
+                      {inscricao.status}
                     </Badge>
-                    <Badge
-                      variant={
-                        inscricao.pagamentoStatus === "aprovado"
-                          ? "default"
-                          : "outline"
-                      }
-                    >
-                      Pag: {inscricao.pagamentoStatus}
-                    </Badge>
-                    {inscricao.pagamentoStatus === "pendente" && (
-                      <Button
-                        size="sm"
-                        variant="elegant"
-                        onClick={() => handleValidarPagamento(inscricao.id)}
-                      >
-                        Validar
-                      </Button>
+
+                    {inscricao.pagamentos ? (
+                      <>
+                        <Badge
+                          variant={
+                            inscricao.pagamentos.status === "aprovado"
+                              ? "default"
+                              : inscricao.pagamentos.status === "rejeitado"
+                                ? "destructive"
+                                : "outline"
+                          }
+                        >
+                          Pag: {inscricao.pagamentos.status}
+                        </Badge>
+                        {inscricao.pagamentos.status === "pendente" && (
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 text-green-500"
+                              onClick={() => handleValidarPagamento(inscricao.pagamentos!.id, 'aprovado')}
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 text-red-500"
+                              onClick={() => handleValidarPagamento(inscricao.pagamentos!.id, 'rejeitado')}
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <Badge variant="outline" className="text-muted-foreground">Sem pagamento</Badge>
                     )}
                   </div>
                 </div>
               ))}
+              {inscricoes.length === 0 && (
+                <p className="text-center text-muted-foreground py-4">Nenhuma inscrição encontrada.</p>
+              )}
             </div>
           </Card>
         </TabsContent>
 
         <TabsContent value="certificados" className="space-y-4">
           <Card className="p-6">
-            <p className="text-muted-foreground">Gerenciamento de certificados em desenvolvimento</p>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium">Certificados Emitidos</h3>
+              <Button onClick={handleEmitirCertificados}>
+                Emitir Certificados
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              {certificados.length > 0 ? (
+                certificados.map((cert: any) => (
+                  <div key={cert.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                    <div>
+                      <p className="font-mono text-sm">{cert.codigo_validacao}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Emitido em: {format(new Date(cert.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                      </p>
+                    </div>
+                    <Button variant="ghost" size="sm">
+                      <Download className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-muted-foreground py-4">Nenhum certificado emitido ainda.</p>
+              )}
+            </div>
           </Card>
         </TabsContent>
 
@@ -177,7 +287,7 @@ export default function EventoDetalhes() {
       <Dialog open={showQRModal} onOpenChange={setShowQRModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>QR Code - {selectedDia}</DialogTitle>
+            <DialogTitle>QR Code - Dia {selectedDia}</DialogTitle>
           </DialogHeader>
           <div className="space-y-6 text-center">
             <div className="w-64 h-64 mx-auto bg-white rounded-lg p-4 flex items-center justify-center">
@@ -200,7 +310,7 @@ export default function EventoDetalhes() {
             </div>
             <div className="p-3 bg-muted rounded-md">
               <p className="text-xs text-muted-foreground mb-1">Link compartilhável:</p>
-              <code className="text-xs">https://signea.app/validar-presenca?e=1&d=1</code>
+              <code className="text-xs">https://signea.app/validar-presenca?e={id}&d={selectedDia}</code>
             </div>
           </div>
         </DialogContent>

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Calendar, Clock, Users, Loader2, MapPin, DollarSign, FileText, CheckCircle, X, Filter, GraduationCap, User, Award } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { modal } from "@/contexts/ModalContext";
+// import { modal } from "@/contexts/ModalContext"; // Removed modal usage
 import { useToast } from "@/contexts/ToastContext";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
@@ -45,15 +45,18 @@ export default function Eventos() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [filtroAtivo, setFiltroAtivo] = useState<FiltroEvento>("todos");
 
+  const [presencasUsuario, setPresencasUsuario] = useState<any[]>([]);
+  const [loadingPresencas, setLoadingPresencas] = useState(false);
+
   const carregarEventos = useCallback(async () => {
     if (!userEmail) {
       setLoading(false);
       return;
     }
-    
+
     try {
       setLoading(true);
-      
+
       // Obter perfil e curso do usuário
       const { data: userProfile } = await supabase
         .from('usuarios')
@@ -96,6 +99,7 @@ export default function Eventos() {
         query = query.or('publico_alvo_perfil.eq.aluno,publico_alvo_perfil.is.null');
       }
       // Se o usuário é organizador, mostrar todos os eventos (aluno e organizador)
+      // Nenhuma cláusula adicional necessária para organizador, pois ele vê tudo por padrão
 
       const { data, error } = await query.order('data_inicio', { ascending: true });
 
@@ -107,7 +111,7 @@ export default function Eventos() {
       // Verificar quais eventos o usuário já está inscrito
       if (data && data.length > 0) {
         const eventosIds = data.map(e => e.id);
-        
+
         const { data: inscricoes, error: inscricoesError } = await supabase
           .from('inscricoes')
           .select('evento_id, status')
@@ -124,7 +128,7 @@ export default function Eventos() {
             ?.filter(i => i.status === 'confirmada')
             .map(i => i.evento_id) || []
         );
-        
+
         // Buscar cursos para cada evento
         const eventosComCursos = await Promise.all(
           data.map(async (evento: any) => {
@@ -132,39 +136,39 @@ export default function Eventos() {
               .from('eventos_cursos')
               .select('curso_id')
               .eq('evento_id', evento.id);
-            
+
             if (!cursosData || cursosData.length === 0) {
               return {
                 ...evento,
                 cursos: []
               };
             }
-            
+
             const cursoIds = cursosData.map((ec: any) => ec.curso_id).filter(Boolean);
             const { data: cursos } = await supabase
               .from('cursos')
               .select('id, nome')
               .in('id', cursoIds);
-            
+
             return {
               ...evento,
               cursos: cursos || []
             };
           })
         );
-        
+
         // Filtrar eventos por curso do usuário
         const eventosFiltradosPorCurso = eventosComCursos.filter(evento => {
           // Se o evento não tem cursos específicos, qualquer um pode ver
           if (evento.cursos.length === 0) return true;
-          
+
           // Se o usuário não tem curso, não pode ver eventos com cursos específicos
           if (!userCursoId) return false;
-          
+
           // Verificar se o curso do usuário está na lista
           return evento.cursos.some((curso: any) => curso.id === userCursoId);
         });
-        
+
         const eventosComInscricao = eventosFiltradosPorCurso.map((evento: any) => ({
           ...evento,
           inscrito: inscritosIds.has(evento.id),
@@ -182,7 +186,7 @@ export default function Eventos() {
     } finally {
       setLoading(false);
     }
-  }, [userEmail]);
+  }, [userEmail, toast]);
 
   useEffect(() => {
     const obterUsuario = async () => {
@@ -203,8 +207,38 @@ export default function Eventos() {
     }
   }, [userEmail, carregarEventos]);
 
-  const handleSubscribe = (evento: Evento) => {
+  const carregarPresencas = async (eventoId: string) => {
+    if (!userEmail) return;
+
+    try {
+      setLoadingPresencas(true);
+      const { data, error } = await supabase
+        .from('presencas')
+        .select('*')
+        .eq('evento_id', eventoId)
+        .eq('usuario_email', userEmail);
+
+      if (error) throw error;
+      setPresencasUsuario(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar presenças:', error);
+      toast.error('Erro ao carregar suas presenças');
+    } finally {
+      setLoadingPresencas(false);
+    }
+  };
+
+  const handleEventClick = (evento: Evento) => {
     setEventoSelecionado(evento);
+    const categoria = categorizarEvento(evento);
+
+    // Se for evento em andamento ou histórico e o usuário estiver inscrito, carrega presenças
+    if ((categoria === 'andamento' || categoria === 'historico') && evento.inscrito) {
+      carregarPresencas(evento.id);
+    } else {
+      setPresencasUsuario([]);
+    }
+
     setShowModal(true);
   };
 
@@ -215,7 +249,7 @@ export default function Eventos() {
     if (eventoSelecionado.data_encerramento_inscricoes) {
       const dataEncerramento = new Date(eventoSelecionado.data_encerramento_inscricoes);
       const agora = new Date();
-      
+
       if (agora > dataEncerramento) {
         toast.error('As inscrições para este evento já encerraram');
         setShowModal(false);
@@ -225,7 +259,7 @@ export default function Eventos() {
 
     try {
       setInscrevendo(true);
-      
+
       const { error } = await supabase
         .from('inscricoes')
         .insert({
@@ -298,7 +332,7 @@ export default function Eventos() {
   const formatarData = (dataInicio: string, dataFim: string) => {
     const inicio = new Date(dataInicio);
     const fim = new Date(dataFim);
-    
+
     if (format(inicio, 'yyyy-MM-dd') === format(fim, 'yyyy-MM-dd')) {
       return format(inicio, "dd/MM/yyyy", { locale: ptBR });
     } else {
@@ -309,10 +343,10 @@ export default function Eventos() {
   const categorizarEvento = (evento: Evento): "proximos" | "andamento" | "historico" => {
     const agora = new Date();
     agora.setHours(0, 0, 0, 0); // Resetar horas para comparar apenas datas
-    
+
     const dataInicio = new Date(evento.data_inicio);
     dataInicio.setHours(0, 0, 0, 0);
-    
+
     const dataFim = new Date(evento.data_fim);
     dataFim.setHours(23, 59, 59, 999); // Fim do dia
 
@@ -320,32 +354,40 @@ export default function Eventos() {
     if (agora > dataFim) {
       return "historico";
     }
-    
+
     // Próximos: data de início é maior que hoje
     if (dataInicio > agora) {
       return "proximos";
     }
-    
+
     // Em andamento: hoje está entre data_inicio e data_fim
     if (agora >= dataInicio && agora <= dataFim) {
       return "andamento";
     }
-    
+
     // Fallback (não deveria acontecer)
     return "historico";
+  };
+
+  const getDiasEvento = (evento: Evento) => {
+    const inicio = new Date(evento.data_inicio);
+    const fim = new Date(evento.data_fim);
+    const diffTime = Math.abs(fim.getTime() - inicio.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const dias = [];
+    for (let i = 0; i <= diffDays; i++) {
+      dias.push(i + 1);
+    }
+    return dias.length > 0 ? dias : [1];
+  };
+
+  const isPresente = (dia: number) => {
+    return presencasUsuario.some(p => p.dia_evento === dia);
   };
 
   const eventosProximos = eventos.filter(e => categorizarEvento(e) === "proximos");
   const eventosAndamento = eventos.filter(e => categorizarEvento(e) === "andamento");
   const eventosHistorico = eventos.filter(e => categorizarEvento(e) === "historico");
-
-  const eventosFiltrados = filtroAtivo === "todos" 
-    ? eventos 
-    : filtroAtivo === "proximos" 
-    ? eventosProximos 
-    : filtroAtivo === "andamento" 
-    ? eventosAndamento 
-    : eventosHistorico;
 
   const renderEventos = (eventosLista: Evento[]) => {
     if (eventosLista.length === 0) {
@@ -362,138 +404,146 @@ export default function Eventos() {
           const categoria = categorizarEvento(evento);
           const isHistorico = categoria === "historico";
           const isAndamento = categoria === "andamento";
-          
-          return (
-          <Card 
-            key={evento.id} 
-            className="overflow-hidden hover:glow-border-hover transition-all cursor-pointer"
-            onClick={() => {
-              setEventoSelecionado(evento);
-              setShowModal(true);
-            }}
-          >
-            {evento.banner_url ? (
-              <img 
-                src={evento.banner_url} 
-                alt={evento.titulo} 
-                className={`w-full h-48 object-cover ${isHistorico ? 'grayscale' : ''}`}
-              />
-            ) : (
-              <div className={`w-full h-48 bg-muted flex items-center justify-center ${isHistorico ? 'grayscale' : ''}`}>
-                <p className="text-muted-foreground text-sm">Imagem indisponível</p>
-              </div>
-            )}
-            <div className="p-6 space-y-4">
-              <div className="flex items-start justify-between">
-                <h3 className="text-xl font-normal">{evento.titulo}</h3>
-                {isAndamento ? (
-                  <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20">
-                    <Clock className="w-3 h-3 mr-1" />
-                    Evento em Andamento
-                  </Badge>
-                ) : evento.inscrito ? (
-                  <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
-                    <CheckCircle className="w-3 h-3 mr-1" />
-                    Inscrito
-                  </Badge>
-                ) : (
-                  <Badge variant="outline">
-                    Disponível
-                  </Badge>
-                )}
-              </div>
 
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4" />
-                  {formatarData(evento.data_inicio, evento.data_fim)}
+          return (
+            <Card
+              key={evento.id}
+              className="overflow-hidden hover:glow-border-hover transition-all cursor-pointer"
+              onClick={() => handleEventClick(evento)}
+            >
+              {evento.banner_url ? (
+                <img
+                  src={evento.banner_url}
+                  alt={evento.titulo}
+                  className={`w-full h-48 object-cover ${isHistorico ? 'grayscale' : ''}`}
+                />
+              ) : (
+                <div className={`w-full h-48 bg-muted flex items-center justify-center ${isHistorico ? 'grayscale' : ''}`}>
+                  <p className="text-muted-foreground text-sm">Imagem indisponível</p>
                 </div>
-                {evento.data_encerramento_inscricoes && (
+              )}
+              <div className="p-6 space-y-4">
+                <div className="flex items-start justify-between">
+                  <h3 className="text-xl font-normal">{evento.titulo}</h3>
+                  {isAndamento ? (
+                    <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20">
+                      <Clock className="w-3 h-3 mr-1" />
+                      Evento em Andamento
+                    </Badge>
+                  ) : evento.inscrito ? (
+                    <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+                      <CheckCircle className="w-3 h-3 mr-1" />
+                      Inscrito
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">
+                      Disponível
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="space-y-2 text-sm text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
-                    Inscrições encerram em: {format(new Date(evento.data_encerramento_inscricoes), "dd/MM/yyyy", { locale: ptBR })}
+                    {formatarData(evento.data_inicio, evento.data_fim)}
                   </div>
-                )}
-                {evento.carga_horaria && (
+                  {evento.data_encerramento_inscricoes && (
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4" />
+                      Inscrições encerram em: {format(new Date(evento.data_encerramento_inscricoes), "dd/MM/yyyy", { locale: ptBR })}
+                    </div>
+                  )}
+                  {evento.carga_horaria && (
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      {evento.carga_horaria}h de carga horária
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4" />
-                    {evento.carga_horaria}h de carga horária
+                    <MapPin className="w-4 h-4" />
+                    {evento.campus || evento.local}
                   </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4" />
-                  {evento.campus || evento.local}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  {evento.vagas_disponiveis} vagas disponíveis
-                </div>
-                {evento.valor && evento.valor > 0 && (
                   <div className="flex items-center gap-2">
-                    <DollarSign className="w-4 h-4" />
-                    R$ {evento.valor.toFixed(2).replace('.', ',')}
+                    <Users className="w-4 h-4" />
+                    {evento.vagas_disponiveis} vagas disponíveis
                   </div>
-                )}
-              </div>
+                  {evento.valor && evento.valor > 0 && (
+                    <div className="flex items-center gap-2">
+                      <DollarSign className="w-4 h-4" />
+                      R$ {evento.valor.toFixed(2).replace('.', ',')}
+                    </div>
+                  )}
+                </div>
 
-              <p className="text-sm text-muted-foreground line-clamp-2">
-                {evento.descricao}
-              </p>
+                <p className="text-sm text-muted-foreground line-clamp-2">
+                  {evento.descricao}
+                </p>
 
-              <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                {isHistorico && evento.inscrito ? (
-                  <Button 
-                    variant="outline" 
-                    className="flex-1 border-destructive/20 text-destructive hover:bg-destructive/10 cursor-not-allowed"
-                    disabled
-                  >
-                    <X className="w-4 h-4 mr-2" />
-                    Evento encerrado
-                  </Button>
-                ) : inscricoesEncerradas(evento) ? (
-                  <Button 
-                    variant="outline" 
-                    className="flex-1 border-destructive/20 text-destructive hover:bg-destructive/10 cursor-not-allowed"
-                    disabled
-                  >
-                    <X className="w-4 h-4 mr-2" />
-                    Inscrições encerradas
-                  </Button>
-                ) : evento.inscrito && podeCancelarInscricao(evento) ? (
-                  <Button 
-                    variant="outline" 
-                    onClick={() => cancelarInscricao(evento)} 
-                    className="flex-1 border-destructive/20 text-destructive hover:bg-destructive/10"
-                  >
-                    <X className="w-4 h-4 mr-2" />
-                    Cancelar Inscrição
-                  </Button>
-                ) : (
-                  <Button 
-                    variant="elegant" 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSubscribe(evento);
-                    }} 
-                    className="flex-1"
-                    disabled={evento.inscrito || evento.vagas_disponiveis === 0 || isHistorico || inscricoesEncerradas(evento)}
-                  >
-                    {evento.inscrito ? (
-                      <>
+                <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                  {isHistorico ? (
+                    evento.inscrito ? (
+                      <Button
+                        variant="outline"
+                        className="flex-1 border-primary/20 text-primary hover:bg-primary/10 cursor-not-allowed"
+                        disabled
+                      >
                         <CheckCircle className="w-4 h-4 mr-2" />
-                        Já Inscrito
-                      </>
+                        Concluído
+                      </Button>
                     ) : (
-                      <>
-                        <Users className="w-4 h-4 mr-2" />
-                        Inscrever-se
-                      </>
-                    )}
-                  </Button>
-                )}
+                      <Button
+                        variant="outline"
+                        className="flex-1 border-muted text-muted-foreground bg-muted/10 cursor-not-allowed"
+                        disabled
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Evento Finalizado
+                      </Button>
+                    )
+                  ) : inscricoesEncerradas(evento) ? (
+                    <Button
+                      variant="outline"
+                      className="flex-1 border-destructive text-destructive hover:bg-destructive/10 cursor-not-allowed"
+                      disabled
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      Inscrições encerradas
+                    </Button>
+                  ) : evento.inscrito && podeCancelarInscricao(evento) ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => cancelarInscricao(evento)}
+                      className="flex-1 border-destructive/20 text-destructive hover:bg-destructive/10"
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      Cancelar Inscrição
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="elegant"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEventClick(evento);
+                      }}
+                      className="flex-1"
+                      disabled={evento.inscrito || evento.vagas_disponiveis === 0 || inscricoesEncerradas(evento)}
+                    >
+                      {evento.inscrito ? (
+                        <>
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Já Inscrito
+                        </>
+                      ) : (
+                        <>
+                          <Users className="w-4 h-4 mr-2" />
+                          Inscrever-se
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
-          </Card>
+            </Card>
           );
         })}
       </div>
@@ -622,28 +672,33 @@ export default function Eventos() {
         </TabsContent>
       </Tabs>
 
-      {/* Modal de Inscrição */}
+      {/* Modal de Inscrição / Detalhes */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="max-w-lg w-[90vw] max-h-[90vh] overflow-y-auto scrollbar-hide">
           <DialogHeader>
             <DialogTitle>
-              {eventoSelecionado?.inscrito ? "Detalhes do Evento" : "Confirmar Inscrição"}
+              {eventoSelecionado?.inscrito
+                ? (categorizarEvento(eventoSelecionado!) === 'proximos' ? "Detalhes da Inscrição" : "Minhas Presenças")
+                : "Detalhes do Evento"
+              }
             </DialogTitle>
             <DialogDescription>
-              {eventoSelecionado?.inscrito 
-                ? "Você já está inscrito neste evento"
+              {eventoSelecionado?.inscrito
+                ? (categorizarEvento(eventoSelecionado!) === 'proximos'
+                  ? "Você já está inscrito neste evento"
+                  : "Acompanhe sua frequência neste evento")
                 : "Revise as informações do evento antes de confirmar sua inscrição"}
             </DialogDescription>
           </DialogHeader>
-          
+
           {eventoSelecionado && (
             <div className="space-y-4">
               {/* Banner */}
               {eventoSelecionado.banner_url && (
-                <img 
-                  src={eventoSelecionado.banner_url} 
-                  alt={eventoSelecionado.titulo} 
-                  className="w-full h-32 sm:h-40 object-cover rounded-lg" 
+                <img
+                  src={eventoSelecionado.banner_url}
+                  alt={eventoSelecionado.titulo}
+                  className="w-full h-32 sm:h-40 object-cover rounded-lg"
                 />
               )}
 
@@ -723,23 +778,65 @@ export default function Eventos() {
                 </div>
               </div>
 
+              {/* Seção de Presenças (Apenas para Andamento/Histórico e Inscritos) */}
+              {eventoSelecionado.inscrito && (categorizarEvento(eventoSelecionado) === 'andamento' || categorizarEvento(eventoSelecionado) === 'historico') && (
+                <div className="space-y-3 pt-2 border-t border-border">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    Registro de Presenças
+                  </h4>
+
+                  {loadingPresencas ? (
+                    <div className="flex justify-center py-4">
+                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {getDiasEvento(eventoSelecionado).map((dia) => {
+                        const presente = isPresente(dia);
+                        return (
+                          <div
+                            key={dia}
+                            className={`p-2 rounded-md border flex flex-col items-center justify-center text-center gap-1 ${presente
+                              ? 'bg-green-500/10 border-green-500/20 text-green-600'
+                              : 'bg-muted/50 border-muted text-muted-foreground'
+                              }`}
+                          >
+                            <span className="text-xs font-medium">Dia {dia}</span>
+                            {presente ? (
+                              <Badge variant="outline" className="bg-green-500/20 border-green-500/30 text-green-700 text-[10px] h-5">
+                                Presente
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] h-5">
+                                Ausente
+                              </Badge>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Botões */}
               {eventoSelecionado.inscrito ? (
                 <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setShowModal(false)} 
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowModal(false)}
                     className="flex-1"
                   >
                     Fechar
                   </Button>
                   {podeCancelarInscricao(eventoSelecionado) && (
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => {
                         setShowModal(false);
                         cancelarInscricao(eventoSelecionado);
-                      }} 
+                      }}
                       className="flex-1 border-destructive/20 text-destructive hover:bg-destructive/10"
                     >
                       <X className="w-4 h-4 mr-2" />
@@ -749,29 +846,31 @@ export default function Eventos() {
                 </div>
               ) : (
                 <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setShowModal(false)} 
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowModal(false)}
                     className="flex-1"
                     disabled={inscrevendo}
                   >
                     Cancelar
                   </Button>
-                  <Button 
-                    variant="elegant" 
-                    onClick={confirmarInscricao} 
-                    className="flex-1"
-                    disabled={inscrevendo}
-                  >
-                    {inscrevendo ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Confirmando...
-                      </>
-                    ) : (
-                      'Confirmar Inscrição'
-                    )}
-                  </Button>
+                  {!inscricoesEncerradas(eventoSelecionado) && categorizarEvento(eventoSelecionado) === 'proximos' && (
+                    <Button
+                      variant="elegant"
+                      onClick={confirmarInscricao}
+                      className="flex-1"
+                      disabled={inscrevendo}
+                    >
+                      {inscrevendo ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Confirmando...
+                        </>
+                      ) : (
+                        'Confirmar Inscrição'
+                      )}
+                    </Button>
+                  )}
                 </div>
               )}
             </div>

@@ -45,76 +45,72 @@ import VisaoGeral from "./pages/campus/VisaoGeral";
 import EventosCampus from "./pages/campus/Eventos";
 import UsuariosCampus from "./pages/campus/Usuarios";
 import CertificadosCampus from "./pages/campus/Certificados";
-import Auditoria from "./pages/campus/Auditoria";
-import Configuracoes from "./pages/campus/Configuracoes";
 import Coordenadores from "./pages/campus/Coordenadores";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="dark">
-        <ProfileProvider>
-          <ToastProvider>
-            <ModalProvider>
-              <ModalListener />
-              <TooltipProvider>
-            <BrowserRouter>
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/cadastro" element={<Cadastro />} />
-              <Route path="/confirmar-codigo" element={<ConfirmarCodigo />} />
-              <Route path="/confirmar-email" element={<ConfirmarEmail />} />
-              <Route path="/validar-presenca" element={<PublicLayout><ValidateAttendance /></PublicLayout>} />
-              <Route path="/validar-certificado" element={<PublicLayout><ValidateCertificate /></PublicLayout>} />
-              <Route path="/certificado/:sha256" element={<PublicLayout><CertificadoView /></PublicLayout>} />
-              <Route path="/certificados/:sha256" element={<PublicLayout><ValidateCertificate /></PublicLayout>} />
-              
-              {/* Usuario Routes */}
-              <Route path="/usuario" element={<ProtectedRoute><Navigate to="/usuario/eventos" replace /></ProtectedRoute>} />
-              <Route path="/usuario/eventos" element={<ProtectedRoute><UsuarioLayout><Eventos /></UsuarioLayout></ProtectedRoute>} />
-              <Route path="/usuario/registrar-presenca" element={<ProtectedRoute><UsuarioLayout><RegistrarPresenca /></UsuarioLayout></ProtectedRoute>} />
-              <Route path="/usuario/meus-certificados" element={<ProtectedRoute><UsuarioLayout><Certificados /></UsuarioLayout></ProtectedRoute>} />
-              <Route path="/usuario/perfil" element={<ProtectedRoute><UsuarioLayout><Perfil /></UsuarioLayout></ProtectedRoute>} />
-              <Route path="/usuario/minhas-solicitacoes" element={<ProtectedRoute><UsuarioLayout><MinhasSolicitacoes /></UsuarioLayout></ProtectedRoute>} />
-              
-              {/* Organizador Routes */}
-              <Route path="/organizador" element={<ProtectedRoute><Navigate to="/organizador/eventos" replace /></ProtectedRoute>} />
-              <Route path="/organizador/eventos" element={<ProtectedRoute><OrganizadorLayout><MeusEventos /></OrganizadorLayout></ProtectedRoute>} />
-              <Route path="/organizador/criar-evento" element={<ProtectedRoute><OrganizadorLayout><CriarEvento /></OrganizadorLayout></ProtectedRoute>} />
-              <Route path="/organizador/evento/:id" element={<ProtectedRoute><OrganizadorLayout><EventoDetalhes /></OrganizadorLayout></ProtectedRoute>} />
-              <Route path="/organizador/dias-qrcodes" element={<ProtectedRoute><OrganizadorLayout><DiasQRCodes /></OrganizadorLayout></ProtectedRoute>} />
-              <Route path="/organizador/inscricoes" element={<ProtectedRoute><OrganizadorLayout><InscricoesOrg /></OrganizadorLayout></ProtectedRoute>} />
-              <Route path="/organizador/presencas" element={<ProtectedRoute><OrganizadorLayout><PresencasOrg /></OrganizadorLayout></ProtectedRoute>} />
-              <Route path="/organizador/pagamentos" element={<ProtectedRoute><OrganizadorLayout><PagamentosOrg /></OrganizadorLayout></ProtectedRoute>} />
-              <Route path="/organizador/certificados" element={<ProtectedRoute><OrganizadorLayout><CertificadosOrg /></OrganizadorLayout></ProtectedRoute>} />
-              <Route path="/organizador/relatorios" element={<ProtectedRoute><OrganizadorLayout><RelatoriosOrg /></OrganizadorLayout></ProtectedRoute>} />
-              <Route path="/organizador/aprovar-eventos" element={<ProtectedRoute><OrganizadorLayout><AprovarEventos /></OrganizadorLayout></ProtectedRoute>} />
-              <Route path="/organizador/perfil" element={<ProtectedRoute><OrganizadorLayout><Perfil /></OrganizadorLayout></ProtectedRoute>} />
-              
-              
-              {/* Campus Routes */}
-              <Route path="/campus" element={<ProtectedRoute><Navigate to="/campus/visao-geral" replace /></ProtectedRoute>} />
-              <Route path="/campus/visao-geral" element={<ProtectedRoute><CampusLayout><VisaoGeral /></CampusLayout></ProtectedRoute>} />
-              <Route path="/campus/eventos" element={<ProtectedRoute><CampusLayout><EventosCampus /></CampusLayout></ProtectedRoute>} />
-              <Route path="/campus/usuarios" element={<ProtectedRoute><CampusLayout><UsuariosCampus /></CampusLayout></ProtectedRoute>} />
-              <Route path="/campus/certificados" element={<ProtectedRoute><CampusLayout><CertificadosCampus /></CampusLayout></ProtectedRoute>} />
-              <Route path="/campus/auditoria" element={<ProtectedRoute><CampusLayout><Auditoria /></CampusLayout></ProtectedRoute>} />
-              <Route path="/campus/configuracoes" element={<ProtectedRoute><CampusLayout><Configuracoes /></CampusLayout></ProtectedRoute>} />
-              <Route path="/campus/coordenadores" element={<ProtectedRoute><CampusLayout><Coordenadores /></CampusLayout></ProtectedRoute>} />
-              
-              {/* Legacy routes - redirect to new structure */}
-              <Route path="/dashboard/*" element={<ProtectedRoute><Navigate to="/usuario/eventos" replace /></ProtectedRoute>} />
-              <Route path="/aluno" element={<ProtectedRoute><Navigate to="/usuario/eventos" replace /></ProtectedRoute>} />
-              <Route path="/admin" element={<ProtectedRoute><Navigate to="/organizador/eventos" replace /></ProtectedRoute>} />
-              
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-        </ModalProvider>
+    <ThemeProvider defaultTheme="dark">
+      <ProfileProvider>
+        <ToastProvider>
+          <ModalProvider>
+            <ModalListener />
+            <TooltipProvider>
+              <BrowserRouter>
+                <Routes>
+                  {/* Public Routes */}
+                  <Route path="/" element={<Home />} />
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/cadastro" element={<Cadastro />} />
+                  <Route path="/confirmar-codigo" element={<ConfirmarCodigo />} />
+                  <Route path="/confirmar-email" element={<ConfirmarEmail />} />
+                  <Route path="/validar-presenca" element={<PublicLayout><ValidateAttendance /></PublicLayout>} />
+                  <Route path="/validar-certificado" element={<PublicLayout><ValidateCertificate /></PublicLayout>} />
+                  <Route path="/certificado/:sha256" element={<PublicLayout><CertificadoView /></PublicLayout>} />
+                  <Route path="/certificados/:sha256" element={<PublicLayout><ValidateCertificate /></PublicLayout>} />
+
+                  {/* Usuario Routes */}
+                  <Route path="/usuario" element={<ProtectedRoute><Navigate to="/usuario/eventos" replace /></ProtectedRoute>} />
+                  <Route path="/usuario/eventos" element={<ProtectedRoute><UsuarioLayout><Eventos /></UsuarioLayout></ProtectedRoute>} />
+                  <Route path="/usuario/registrar-presenca" element={<ProtectedRoute><UsuarioLayout><RegistrarPresenca /></UsuarioLayout></ProtectedRoute>} />
+                  <Route path="/usuario/meus-certificados" element={<ProtectedRoute><UsuarioLayout><Certificados /></UsuarioLayout></ProtectedRoute>} />
+                  <Route path="/usuario/perfil" element={<ProtectedRoute><UsuarioLayout><Perfil /></UsuarioLayout></ProtectedRoute>} />
+                  <Route path="/usuario/minhas-solicitacoes" element={<ProtectedRoute><UsuarioLayout><MinhasSolicitacoes /></UsuarioLayout></ProtectedRoute>} />
+
+                  {/* Organizador Routes */}
+                  <Route path="/organizador" element={<ProtectedRoute><Navigate to="/organizador/eventos" replace /></ProtectedRoute>} />
+                  <Route path="/organizador/eventos" element={<ProtectedRoute><OrganizadorLayout><MeusEventos /></OrganizadorLayout></ProtectedRoute>} />
+                  <Route path="/organizador/criar-evento" element={<ProtectedRoute><OrganizadorLayout><CriarEvento /></OrganizadorLayout></ProtectedRoute>} />
+                  <Route path="/organizador/evento/:id" element={<ProtectedRoute><OrganizadorLayout><EventoDetalhes /></OrganizadorLayout></ProtectedRoute>} />
+                  <Route path="/organizador/dias-qrcodes" element={<ProtectedRoute><OrganizadorLayout><DiasQRCodes /></OrganizadorLayout></ProtectedRoute>} />
+                  <Route path="/organizador/inscricoes" element={<ProtectedRoute><OrganizadorLayout><InscricoesOrg /></OrganizadorLayout></ProtectedRoute>} />
+                  <Route path="/organizador/presencas" element={<ProtectedRoute><OrganizadorLayout><PresencasOrg /></OrganizadorLayout></ProtectedRoute>} />
+                  <Route path="/organizador/pagamentos" element={<ProtectedRoute><OrganizadorLayout><PagamentosOrg /></OrganizadorLayout></ProtectedRoute>} />
+                  <Route path="/organizador/certificados" element={<ProtectedRoute><OrganizadorLayout><CertificadosOrg /></OrganizadorLayout></ProtectedRoute>} />
+                  <Route path="/organizador/relatorios" element={<ProtectedRoute><OrganizadorLayout><RelatoriosOrg /></OrganizadorLayout></ProtectedRoute>} />
+                  <Route path="/organizador/aprovar-eventos" element={<ProtectedRoute><OrganizadorLayout><AprovarEventos /></OrganizadorLayout></ProtectedRoute>} />
+                  <Route path="/organizador/perfil" element={<ProtectedRoute><OrganizadorLayout><Perfil /></OrganizadorLayout></ProtectedRoute>} />
+
+
+                  {/* Campus Routes */}
+                  <Route path="/campus" element={<ProtectedRoute><Navigate to="/campus/visao-geral" replace /></ProtectedRoute>} />
+                  <Route path="/campus/visao-geral" element={<ProtectedRoute><CampusLayout><VisaoGeral /></CampusLayout></ProtectedRoute>} />
+                  <Route path="/campus/eventos" element={<ProtectedRoute><CampusLayout><EventosCampus /></CampusLayout></ProtectedRoute>} />
+                  <Route path="/campus/usuarios" element={<ProtectedRoute><CampusLayout><UsuariosCampus /></CampusLayout></ProtectedRoute>} />
+                  <Route path="/campus/certificados" element={<ProtectedRoute><CampusLayout><CertificadosCampus /></CampusLayout></ProtectedRoute>} />
+                  <Route path="/campus/coordenadores" element={<ProtectedRoute><CampusLayout><Coordenadores /></CampusLayout></ProtectedRoute>} />
+
+                  {/* Legacy routes - redirect to new structure */}
+                  <Route path="/dashboard/*" element={<ProtectedRoute><Navigate to="/usuario/eventos" replace /></ProtectedRoute>} />
+                  <Route path="/aluno" element={<ProtectedRoute><Navigate to="/usuario/eventos" replace /></ProtectedRoute>} />
+                  <Route path="/admin" element={<ProtectedRoute><Navigate to="/organizador/eventos" replace /></ProtectedRoute>} />
+
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </BrowserRouter>
+            </TooltipProvider>
+          </ModalProvider>
         </ToastProvider>
       </ProfileProvider>
     </ThemeProvider>
