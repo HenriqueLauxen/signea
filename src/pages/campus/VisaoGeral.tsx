@@ -55,28 +55,46 @@ export default function VisaoGeral() {
         .select("*", { count: "exact", head: true });
 
       // 4. Taxa de Presença (Alunos que foram em TODOS os eventos que se inscreveram)
-      // Buscar todas as inscrições com status de presença
+      // Buscar todas as inscrições com presenças relacionadas
       const { data: inscricoes } = await supabase
         .from("inscricoes")
-        .select("user_id, presente");
+        .select("usuario_email, evento_id");
 
       let taxa = "0%";
       if (inscricoes && inscricoes.length > 0) {
+        // Buscar presenças para verificar se completaram
+        const { data: presencas } = await supabase
+          .from("presencas")
+          .select("usuario_email, evento_id");
+
         // Agrupar por usuário
-        const userInscricoes: Record<string, boolean[]> = {};
+        const userInscricoes: Record<string, Set<string>> = {};
+        const userPresencas: Record<string, Set<string>> = {};
 
         inscricoes.forEach((insc) => {
-          if (!userInscricoes[insc.user_id]) {
-            userInscricoes[insc.user_id] = [];
+          if (!userInscricoes[insc.usuario_email]) {
+            userInscricoes[insc.usuario_email] = new Set();
           }
-          userInscricoes[insc.user_id].push(insc.presente || false);
+          userInscricoes[insc.usuario_email].add(insc.evento_id);
         });
 
-        // Contar quantos usuários têm 100% de presença
+        presencas?.forEach((pres) => {
+          if (!userPresencas[pres.usuario_email]) {
+            userPresencas[pres.usuario_email] = new Set();
+          }
+          userPresencas[pres.usuario_email].add(pres.evento_id);
+        });
+
+        // Contar quantos usuários têm presença em todos os eventos que se inscreveram
         let usuariosComPresencaTotal = 0;
         const totalUsuariosComInscricao = Object.keys(userInscricoes).length;
 
-        Object.values(userInscricoes).forEach((presencas) => {
+        Object.entries(userInscricoes).forEach(([email, eventosInscritos]) => {
+          const eventosPresentes = userPresencas[email] || new Set();
+          // Verificar se o usuário tem presença em todos os eventos
+          const presencas = Array.from(eventosInscritos).map((eventoId) => 
+            eventosPresentes.has(eventoId)
+          );
           const foiEmTodos = presencas.every((p) => p === true);
           if (foiEmTodos) {
             usuariosComPresencaTotal++;

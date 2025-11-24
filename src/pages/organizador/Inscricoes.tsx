@@ -91,7 +91,6 @@ export default function Inscricoes() {
       setEventos(eventosData || []);
 
       if (!eventosData || eventosData.length === 0) {
-        toast.info('Você ainda não criou nenhum evento');
         setInscricoes([]);
         setLoading(false);
         return;

@@ -205,6 +205,7 @@ export default function MinhasSolicitacoes() {
         descricao: descricao.trim(),
         data_inicio: dateRange.from.toISOString(),
         data_fim: dateRange.to.toISOString(),
+        local: (campus?.trim() || '') + (sala?.trim() ? ' - ' + sala.trim() : ''),
         campus: campus?.trim() || null,
         sala: sala?.trim() || null,
         capacidade_maxima: capacidadeMaxima,
@@ -216,7 +217,7 @@ export default function MinhasSolicitacoes() {
         organizador_nome: userData?.nome_completo || session.user.email,
         status: statusEvento,
         data_aprovacao: dataAprovacao,
-        gera_certificado: true, // Certificado é obrigatório
+        gera_certificado: true,
       };
 
       const { error } = await supabase.from("eventos").insert(payload);

@@ -71,7 +71,6 @@ export default function Pagamentos() {
       setEventos(eventosData || []);
 
       if (!eventosData || eventosData.length === 0) {
-        toast.info('Você não tem eventos pagos cadastrados');
         setPagamentos([]);
         setLoading(false);
         return;

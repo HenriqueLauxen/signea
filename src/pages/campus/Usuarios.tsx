@@ -32,11 +32,10 @@ import {
 } from "@/components/ui/select";
 
 interface Usuario {
-  id: string;
-  nome_completo: string;
   email: string;
+  nome_completo: string;
   matricula: string;
-  tipo: string; // user, organizer, admin
+  tipo: string;
   avatar_url: string | null;
   campus_id: number | null;
   curso_id: number | null;
@@ -147,7 +146,7 @@ export default function Usuarios() {
       const { error } = await supabase
         .from('usuarios')
         .update(updates)
-        .eq('id', editingUser.id);
+        .eq('email', editingUser.email);
 
       if (error) throw error;
 
