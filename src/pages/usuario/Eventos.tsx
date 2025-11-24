@@ -12,6 +12,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import QRCode from "qrcode";
 import { getPagamentoStatus } from "@/lib/api/pagamento";
+import { getRouteUrl } from "@/lib/config";
 
 interface Evento {
   id: string;
@@ -324,7 +325,7 @@ export default function Eventos() {
         setAguardandoPagamento(true);
         
         // Gerar QRCode
-        const url = `${window.location.origin}/pagar-simulacao?id=${inscricaoId}`;
+        const url = getRouteUrl(`/pagar-simulacao?id=${inscricaoId}`);
         try {
           const qrCodeDataUrl = await QRCode.toDataURL(url, { width: 300 });
           setQrCodeUrl(qrCodeDataUrl);
@@ -989,7 +990,7 @@ export default function Eventos() {
                         Escaneie o QR Code ou abra a URL para simular o pagamento
                       </p>
                       <p className="text-xs text-muted-foreground text-center font-mono break-all px-4">
-                        {`${window.location.origin}/pagar-simulacao?id=${inscricaoPendenteId}`}
+                        {getRouteUrl(`/pagar-simulacao?id=${inscricaoPendenteId}`)}
                       </p>
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Loader2 className="w-4 h-4 animate-spin" />

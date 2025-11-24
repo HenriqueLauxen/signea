@@ -9,6 +9,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { format, differenceInDays, addDays, isAfter, isBefore, isWithinInterval } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import QRCode from "qrcode";
+import { getRouteUrl } from "@/lib/config";
 
 interface Evento {
   id: string;
@@ -165,7 +166,7 @@ export default function DiasQRCodes() {
     codigoQRCode: string
   ) => {
     try {
-      const url = `${window.location.origin}/registrar-presenca/${codigoQRCode}`;
+      const url = getRouteUrl(`/registrar-presenca/${codigoQRCode}`);
       const qrCodeDataUrl = await QRCode.toDataURL(url, {
         width: 400,
         margin: 2,

@@ -8,6 +8,7 @@ import { modal } from "@/contexts/ModalContext";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import QRCode from "qrcode";
+import { getRouteUrl } from "@/lib/config";
 
 interface CertificadoData {
   id: string;
@@ -170,7 +171,7 @@ export default function CertificadoView() {
       const codigoValidacao = certificado.hash_sha256 || sha256 || "";
       if (!codigoValidacao) return;
 
-      const url = `${window.location.origin}/certificados/${codigoValidacao}`;
+      const url = getRouteUrl(`/certificados/${codigoValidacao}`);
       const qrCodeDataUrl = await QRCode.toDataURL(url, {
         width: 200,
         margin: 2,
