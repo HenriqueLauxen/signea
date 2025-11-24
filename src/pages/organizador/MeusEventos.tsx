@@ -59,27 +59,11 @@ export default function MeusEventos() {
         return;
       }
 
-      // Buscar campus do usuário (através do relacionamento)
-      const { data: userData } = await supabase
-        .from('usuarios')
-        .select('campus_id, campus:campus_id(nome)')
-        .eq('email', session.user.email)
-        .single();
-
-      const userCampusNome = (userData?.campus as any)?.nome;
-
-      // Buscar TODOS os eventos do organizador ou do campus
-      let query = supabase
+      // Buscar TODOS os eventos (todos os organizadores podem ver todos os eventos)
+      const { data, error } = await supabase
         .from('eventos')
         .select('*')
         .order('created_at', { ascending: false });
-
-      // Se o usuário tem campus definido, filtrar por campus (eventos.campus é string)
-      if (userCampusNome) {
-        query = query.eq('campus', userCampusNome);
-      }
-
-      const { data, error } = await query;
 
       if (error) throw error;
 

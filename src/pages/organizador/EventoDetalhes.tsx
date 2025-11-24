@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -100,10 +101,121 @@ export default function EventoDetalhes() {
     }
   };
 
+  // Função auxiliar para gerar hash SHA256
+  const gerarHashSHA256 = async (texto: string): Promise<string> => {
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(texto);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+      } catch (error) {
+        console.warn("Erro ao gerar hash SHA256 com crypto, usando fallback:", error);
+      }
+    }
+    // Fallback: hash simples baseado em base64
+    const hashInput = `${texto}${Date.now()}${Math.random()}`;
+    return btoa(hashInput).replace(/[^a-zA-Z0-9]/g, '').substring(0, 64).toUpperCase();
+  };
+
   const handleEmitirCertificados = async () => {
-    // Lógica simplificada: emitir para quem tem presença (exemplo)
-    // Em um cenário real, validaria % de presença
-    toast.success("Funcionalidade de emissão em massa em desenvolvimento");
+    if (!evento || !id) {
+      toast.error("Evento não encontrado");
+      return;
+    }
+
+    try {
+      // Buscar todas as inscrições confirmadas do evento
+      const { data: inscricoesConfirmadas, error: inscricoesError } = await supabase
+        .from("inscricoes")
+        .select("id, usuario_email")
+        .eq("evento_id", id)
+        .eq("status", "confirmada");
+
+      if (inscricoesError) {
+        console.error("Erro ao buscar inscrições:", inscricoesError);
+        toast.error("Erro ao buscar inscrições");
+        return;
+      }
+
+      if (!inscricoesConfirmadas || inscricoesConfirmadas.length === 0) {
+        toast.error("Nenhuma inscrição confirmada encontrada para este evento");
+        return;
+      }
+
+      toast.success(`Gerando ${inscricoesConfirmadas.length} certificado(s)...`);
+
+      // Buscar nomes dos usuários
+      const emails = inscricoesConfirmadas.map((i: any) => i.usuario_email);
+      const { data: usuariosData } = await supabase
+        .from("usuarios")
+        .select("email, nome_completo")
+        .in("email", emails);
+
+      // Criar mapa de email -> nome
+      const usuariosMap = new Map<string, string>();
+      usuariosData?.forEach((u: any) => {
+        usuariosMap.set(u.email, u.nome_completo || u.email);
+      });
+
+      // Gerar certificados para todos os inscritos
+      const certificadosParaCriar = await Promise.all(
+        inscricoesConfirmadas.map(async (inscricao: any) => {
+          const usuarioNome = usuariosMap.get(inscricao.usuario_email) || inscricao.usuario_email;
+
+          // Gerar código de validação único
+          const timestamp = Date.now();
+          const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+          const codigoValidacao = `CERT-${id.substring(0, 8).toUpperCase()}-${random}-${timestamp.toString(36).toUpperCase()}`;
+
+          // Gerar hash SHA256 único
+          const hashInput = `${inscricao.usuario_email}${id}${evento.titulo}${timestamp}${random}`;
+          const hashSHA256 = await gerarHashSHA256(hashInput);
+
+          return {
+            evento_id: id,
+            usuario_email: inscricao.usuario_email,
+            usuario_nome: usuarioNome,
+            codigo_validacao: codigoValidacao,
+            hash_sha256: hashSHA256,
+            data_emissao: new Date().toISOString()
+          };
+        })
+      );
+
+      // Inserir/atualizar certificados usando upsert (um por vez para melhor controle de erros)
+      let sucessos = 0;
+      let erros = 0;
+
+      for (const certificado of certificadosParaCriar) {
+        const { error: certificadoError } = await supabase
+          .from("certificados")
+          .upsert(certificado, {
+            onConflict: "evento_id,usuario_email"
+          });
+
+        if (certificadoError) {
+          console.error(`Erro ao emitir certificado para ${certificado.usuario_email}:`, certificadoError);
+          erros++;
+        } else {
+          sucessos++;
+        }
+      }
+
+      if (erros > 0) {
+        toast.error(`${sucessos} certificado(s) emitido(s), ${erros} erro(s)`);
+      } else {
+        toast.success(`${sucessos} certificado(s) emitido(s) com sucesso!`);
+      }
+      
+      // Recarregar certificados usando React Query
+      // O hook useCertificados deve recarregar automaticamente
+      window.location.reload();
+    } catch (error: any) {
+      console.error("Erro ao emitir certificados:", error);
+      toast.error(`Erro ao emitir certificados: ${error.message || "Erro desconhecido"}`);
+    }
   };
 
   const getDiasEvento = () => {
@@ -193,49 +305,54 @@ export default function EventoDetalhes() {
         palavra += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
       }
 
-      // Verificar se já existe palavra-chave para este dia
-      const { data: existente } = await supabase
+      // Usar upsert para criar ou atualizar palavra-chave
+      // Isso evita problemas de constraint e simplifica o código
+      const { error } = await supabase
         .from("evento_palavras_chave")
-        .select("id")
-        .eq("evento_id", id)
-        .eq("data_evento", dataDiaStr)
-        .maybeSingle();
+        .upsert({
+          evento_id: id,
+          data_evento: dataDiaStr,
+          palavra_chave: palavra.toUpperCase()
+        }, {
+          onConflict: 'evento_id,data_evento'
+        });
 
-      if (existente) {
-        // Atualizar palavra-chave existente
-        const { error } = await supabase
-          .from("evento_palavras_chave")
-          .update({ palavra_chave: palavra })
-          .eq("id", existente.id);
-
-        if (error) throw error;
-      } else {
-        // Criar nova palavra-chave
-        const { error } = await supabase
-          .from("evento_palavras_chave")
-          .insert({
-            evento_id: id,
-            data_evento: dataDiaStr,
-            palavra_chave: palavra
-          });
-
-        if (error) throw error;
+      if (error) {
+        console.error("Erro detalhado ao salvar palavra-chave:", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          evento_id: id,
+          data_evento: dataDiaStr
+        });
+        throw error;
       }
 
       // Atualizar estado local
       setPalavrasChave(prev => ({
         ...prev,
         [dia]: {
-          palavra,
+          palavra: palavra.toUpperCase(),
           data: dataDiaStr,
           show: true
         }
       }));
 
       toast.success(`Palavra-chave gerada para o Dia ${dia}!`);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao gerar palavra-chave:", error);
-      toast.error("Erro ao gerar palavra-chave");
+      const errorMessage = error?.message || "Erro desconhecido";
+      const errorDetails = error?.details || error?.hint || "";
+      
+      // Mensagem mais específica baseada no tipo de erro
+      if (error?.code === '42P01' || errorMessage?.includes('does not exist')) {
+        toast.error("Tabela não encontrada. Execute a migration 004_create_evento_palavras_chave.sql no Supabase");
+      } else if (error?.code === '42501' || errorMessage?.includes('permission denied')) {
+        toast.error("Sem permissão. Verifique se você é o organizador do evento.");
+      } else {
+        toast.error(`Erro: ${errorMessage}${errorDetails ? ` - ${errorDetails}` : ""}`);
+      }
     } finally {
       setGerandoPalavraChave(prev => ({ ...prev, [dia]: false }));
     }

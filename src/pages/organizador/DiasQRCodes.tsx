@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QrCode, Calendar, Clock, Download, Loader2, MapPin, Key, Copy, CheckCircle, XCircle, PlayCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { modal } from "@/contexts/ModalContext";
+import { useToast } from "@/contexts/ToastContext";
 import { format, differenceInDays, addDays, isAfter, isBefore, isWithinInterval } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import QRCode from "qrcode";
@@ -39,6 +39,7 @@ interface EventoComPalavrasChave extends Evento {
 type StatusEvento = "ativa" | "em_andamento" | "expirada";
 
 export default function DiasQRCodes() {
+  const toast = useToast();
   const [eventos, setEventos] = useState<EventoComPalavrasChave[]>([]);
   const [loading, setLoading] = useState(true);
   const [eventoExpandido, setEventoExpandido] = useState<string | null>(null);
@@ -56,29 +57,28 @@ export default function DiasQRCodes() {
       
       if (sessionError) {
         console.error("Erro ao obter sessão:", sessionError);
-        modal.error("Erro ao obter sessão do usuário");
+        toast.error("Erro ao obter sessão do usuário");
         setLoading(false);
         return;
       }
 
       if (!session?.user?.email) {
         console.log("Nenhum usuário autenticado");
-        modal.error("Usuário não autenticado");
+        toast.error("Usuário não autenticado");
         setLoading(false);
         return;
       }
 
-      // Buscar eventos aprovados
+      // Buscar eventos aprovados (todos os organizadores podem ver todos os eventos)
       const { data: eventosData, error: eventosError } = await supabase
         .from('eventos')
         .select('*')
-        .eq('organizador_email', session.user.email)
         .eq('status', 'aprovado')
         .order('data_inicio', { ascending: false });
 
       if (eventosError) {
         console.error('Erro na query eventos:', eventosError);
-        modal.error(`Erro ao buscar eventos: ${eventosError.message}`);
+        toast.error(`Erro ao buscar eventos: ${eventosError.message}`);
         setLoading(false);
         return;
       }
@@ -119,7 +119,7 @@ export default function DiasQRCodes() {
       setEventos(eventosComPalavras);
     } catch (error: any) {
       console.error('Erro ao carregar eventos:', error);
-      modal.error(`Erro: ${error.message || 'Erro desconhecido'}`);
+      toast.error(`Erro: ${error.message || 'Erro desconhecido'}`);
     } finally {
       setLoading(false);
     }
@@ -178,7 +178,7 @@ export default function DiasQRCodes() {
       return qrCodeDataUrl;
     } catch (error) {
       console.error('Erro ao gerar QR code:', error);
-      modal.error('Erro ao gerar QR code');
+      toast.error('Erro ao gerar QR code');
       return null;
     }
   };
@@ -208,12 +208,12 @@ export default function DiasQRCodes() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    modal.success('QR Code baixado!');
+    toast.success('QR Code baixado!');
   };
 
   const handleCopiarCodigo = (codigo: string) => {
     navigator.clipboard.writeText(codigo);
-    modal.success('Código copiado!');
+    toast.success('Código copiado!');
   };
 
   const getDiasEvento = (evento: Evento) => {
@@ -452,3 +452,4 @@ export default function DiasQRCodes() {
     </div>
   );
 }
+

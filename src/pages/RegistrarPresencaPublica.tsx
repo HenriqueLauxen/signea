@@ -10,12 +10,18 @@ import { useToast } from "@/contexts/ToastContext";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { obterLocalizacaoAtual, calcularDistanciaGPS } from "@/lib/gpsUtils";
 
 interface EventoInfo {
   id: string;
   titulo: string;
   data_inicio: string;
   data_fim: string;
+  latitude: number | null;
+  longitude: number | null;
+  raio_validacao_metros: number | null;
+  permite_presenca_remota: boolean;
+  nao_requer_validacao_localizacao: boolean;
 }
 
 export default function RegistrarPresencaPublica() {
@@ -31,6 +37,8 @@ export default function RegistrarPresencaPublica() {
   const [dataEvento, setDataEvento] = useState<string | null>(null);
   const [validando, setValidando] = useState(false);
   const [usuarioEncontrado, setUsuarioEncontrado] = useState<any>(null);
+  const [localizacao, setLocalizacao] = useState<{ lat: number; lng: number } | null>(null);
+  const [capturandoLocalizacao, setCapturandoLocalizacao] = useState(false);
 
   useEffect(() => {
     if (codigo && codigo.length === 6) {
@@ -46,7 +54,7 @@ export default function RegistrarPresencaPublica() {
       setLoading(true);
       const { data, error } = await supabase
         .from("eventos")
-        .select("id, titulo, data_inicio, data_fim")
+        .select("id, titulo, data_inicio, data_fim, latitude, longitude, raio_validacao_metros, permite_presenca_remota, nao_requer_validacao_localizacao")
         .eq("codigo_qrcode", codigoQR.toUpperCase())
         .single();
 
@@ -61,6 +69,11 @@ export default function RegistrarPresencaPublica() {
         titulo: data.titulo,
         data_inicio: data.data_inicio,
         data_fim: data.data_fim,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        raio_validacao_metros: data.raio_validacao_metros,
+        permite_presenca_remota: data.permite_presenca_remota || false,
+        nao_requer_validacao_localizacao: data.nao_requer_validacao_localizacao || false,
       });
     } catch (error) {
       console.error("Erro ao buscar evento:", error);
@@ -129,6 +142,49 @@ export default function RegistrarPresencaPublica() {
     }
   };
 
+  const capturarLocalizacao = async () => {
+    try {
+      setCapturandoLocalizacao(true);
+      const { latitude, longitude } = await obterLocalizacaoAtual();
+      setLocalizacao({ lat: latitude, lng: longitude });
+      toast.success("Localização capturada com sucesso!");
+    } catch (error: any) {
+      console.error("Erro ao capturar localização:", error);
+      toast.error(error.message || "Erro ao capturar localização");
+    } finally {
+      setCapturandoLocalizacao(false);
+    }
+  };
+
+  const validarDistancia = (): boolean => {
+    if (!eventoInfo || !localizacao) return false;
+    
+    // Se não requer validação de localização ou permite presença remota, não valida distância
+    if (eventoInfo.nao_requer_validacao_localizacao || eventoInfo.permite_presenca_remota) return true;
+    
+    if (!eventoInfo.latitude || !eventoInfo.longitude) {
+      toast.error("Evento não possui localização definida");
+      return false;
+    }
+
+    const distanciaMetros = calcularDistanciaGPS(
+      localizacao.lat,
+      localizacao.lng,
+      eventoInfo.latitude,
+      eventoInfo.longitude
+    );
+
+    const distanciaKm = distanciaMetros / 1000;
+    const distanciaMaximaKm = 2.5;
+    
+    if (distanciaKm > distanciaMaximaKm) {
+      toast.error(`Você está muito longe do evento. Distância: ${distanciaKm.toFixed(2)}km (máximo: ${distanciaMaximaKm}km)`);
+      return false;
+    }
+
+    return true;
+  };
+
   const handleRegistrarPresenca = async () => {
     if (!eventoInfo) {
       toast.error("Evento não encontrado");
@@ -142,6 +198,15 @@ export default function RegistrarPresencaPublica() {
 
     if (!dataEvento) {
       toast.error("Valide a palavra-chave primeiro");
+      return;
+    }
+
+    if (!localizacao) {
+      toast.error("Capture sua localização primeiro");
+      return;
+    }
+
+    if (!validarDistancia()) {
       return;
     }
 
@@ -197,6 +262,9 @@ export default function RegistrarPresencaPublica() {
           data_presenca: new Date().toISOString(),
           dia_evento: diaEvento,
           palavra_chave_usada: palavraChave.toUpperCase(),
+          latitude_capturada: localizacao.lat,
+          longitude_capturada: localizacao.lng,
+          distancia_validada: true,
           usuario_logado: false, // Registro público, não logado
         });
 
@@ -214,6 +282,7 @@ export default function RegistrarPresencaPublica() {
       setEmail("");
       setDataEvento(null);
       setUsuarioEncontrado(null);
+      setLocalizacao(null);
     } catch (error) {
       console.error("Erro ao registrar presença:", error);
       toast.error("Erro ao registrar presença");
@@ -348,11 +417,65 @@ export default function RegistrarPresencaPublica() {
             )}
           </div>
 
+          {/* Capturar Localização */}
+          {eventoInfo && (
+            <div className="space-y-4">
+              <h2 className="text-lg font-normal">3. Capturar Localização</h2>
+              <div className="space-y-2">
+                <Label>Localização *</Label>
+                {!localizacao ? (
+                  <Button
+                    variant="outline"
+                    onClick={capturarLocalizacao}
+                    disabled={capturandoLocalizacao}
+                    className="w-full"
+                  >
+                    {capturandoLocalizacao ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Capturando...
+                      </>
+                    ) : (
+                      <>
+                        <MapPin className="w-4 h-4 mr-2" />
+                        Capturar Localização
+                      </>
+                    )}
+                  </Button>
+                ) : (
+                  <div className="p-4 bg-muted rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">Localização capturada</p>
+                        <p className="text-xs text-muted-foreground">
+                          Lat: {localizacao.lat.toFixed(6)}, Lng: {localizacao.lng.toFixed(6)}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={capturarLocalizacao}
+                        disabled={capturandoLocalizacao}
+                      >
+                        Recapturar
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {(eventoInfo.nao_requer_validacao_localizacao || eventoInfo.permite_presenca_remota) && (
+                  <p className="text-xs text-muted-foreground">
+                    Este evento permite presença remota
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Registrar Presença */}
           <div className="pt-4 border-t">
             <Button
               onClick={handleRegistrarPresenca}
-              disabled={!usuarioEncontrado || !dataEvento || validando}
+              disabled={!usuarioEncontrado || !dataEvento || !localizacao || validando}
               className="w-full"
               size="lg"
             >

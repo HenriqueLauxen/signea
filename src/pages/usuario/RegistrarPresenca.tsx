@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { QrCode, Key, MapPin, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { QrCode, Key, MapPin, Loader2, CheckCircle, AlertCircle, History, Filter } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { modal } from "@/contexts/ModalContext";
@@ -39,6 +40,12 @@ export default function RegistrarPresenca() {
   const [capturandoLocalizacao, setCapturandoLocalizacao] = useState(false);
   const [validando, setValidando] = useState(false);
   
+  // Histórico de presenças
+  const [historicoPresencas, setHistoricoPresencas] = useState<any[]>([]);
+  const [eventosHistorico, setEventosHistorico] = useState<any[]>([]);
+  const [eventoFiltro, setEventoFiltro] = useState<string>("todos");
+  const [loadingHistorico, setLoadingHistorico] = useState(false);
+  
   const qrCodeRef = useRef<Html5Qrcode | null>(null);
   const scannerRef = useRef<HTMLDivElement>(null);
 
@@ -60,6 +67,72 @@ export default function RegistrarPresenca() {
       }
     };
   }, [scanning]);
+
+  // Carregar histórico de presenças
+  useEffect(() => {
+    carregarHistoricoPresencas();
+  }, []);
+
+  const carregarHistoricoPresencas = async () => {
+    try {
+      setLoadingHistorico(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.email) return;
+
+      // Buscar todas as presenças do usuário com dados do evento
+      const { data: presencasData, error: presencasError } = await supabase
+        .from("presencas")
+        .select(`
+          id,
+          evento_id,
+          data_presenca,
+          palavra_chave_usada,
+          latitude_capturada,
+          longitude_capturada,
+          eventos:evento_id (
+            id,
+            titulo
+          )
+        `)
+        .eq("usuario_email", session.user.email)
+        .order("data_presenca", { ascending: false });
+
+      if (presencasError) {
+        console.error("Erro ao buscar histórico:", presencasError);
+        return;
+      }
+
+      // Processar dados
+      const presencasProcessadas = (presencasData || []).map((p: any) => ({
+        id: p.id,
+        evento_id: p.evento_id,
+        evento_titulo: Array.isArray(p.eventos) ? p.eventos[0]?.titulo : p.eventos?.titulo || "Evento não encontrado",
+        data_presenca: p.data_presenca,
+        palavra_chave: p.palavra_chave_usada || "N/A",
+        latitude: p.latitude_capturada,
+        longitude: p.longitude_capturada,
+      }));
+
+      setHistoricoPresencas(presencasProcessadas);
+
+      // Extrair lista única de eventos para o filtro
+      const eventosUnicos = Array.from(
+        new Map(
+          presencasProcessadas.map((p: any) => [p.evento_id, { id: p.evento_id, titulo: p.evento_titulo }])
+        ).values()
+      );
+      setEventosHistorico(eventosUnicos);
+    } catch (error) {
+      console.error("Erro ao carregar histórico:", error);
+    } finally {
+      setLoadingHistorico(false);
+    }
+  };
+
+  // Filtrar histórico por evento
+  const historicoFiltrado = eventoFiltro === "todos"
+    ? historicoPresencas
+    : historicoPresencas.filter((p: any) => p.evento_id === eventoFiltro);
 
   const buscarEventoPorCodigo = async (codigo: string) => {
     try {
@@ -376,6 +449,9 @@ export default function RegistrarPresenca() {
 
       modal.success("Presença registrada com sucesso!");
       
+      // Recarregar histórico
+      await carregarHistoricoPresencas();
+      
       // Limpar formulário
       setCodigoQRCode("");
       setPalavraChave("");
@@ -394,7 +470,9 @@ export default function RegistrarPresenca() {
     <div className="space-y-6">
       <h1 className="text-3xl font-light">Registrar Presença</h1>
 
-      <Card className="p-6 max-w-2xl">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Validação de Presença - Esquerda */}
+        <Card className="p-6">
         <Tabs value={metodoEntrada} onValueChange={(v) => setMetodoEntrada(v as "qrcode" | "codigo")}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="qrcode">
@@ -555,7 +633,89 @@ export default function RegistrarPresenca() {
             </Button>
           </div>
         )}
-      </Card>
+        </Card>
+
+        {/* Histórico de Presenças - Direita */}
+        <Card className="p-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-light flex items-center gap-2">
+                <History className="w-5 h-5" />
+                Histórico de Presenças
+              </h2>
+            </div>
+
+            {/* Filtro por Evento */}
+            {eventosHistorico.length > 0 && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Filter className="w-4 h-4" />
+                  Filtrar por Evento
+                </Label>
+                <Select value={eventoFiltro} onValueChange={setEventoFiltro}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todos os eventos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos os eventos</SelectItem>
+                    {eventosHistorico.map((evento: any) => (
+                      <SelectItem key={evento.id} value={evento.id}>
+                        {evento.titulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Lista de Presenças */}
+            {loadingHistorico ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : historicoFiltrado.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <History className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                <p>Nenhuma presença registrada ainda</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                {historicoFiltrado.map((presenca: any) => (
+                  <div key={presenca.id} className="p-4 bg-muted rounded-lg space-y-2">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className="font-medium text-sm">{presenca.evento_titulo}</h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {format(new Date(presenca.data_presenca), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="text-xs">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Confirmada
+                      </Badge>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <p className="text-muted-foreground">Palavra-chave:</p>
+                        <p className="font-mono font-medium">{presenca.palavra_chave}</p>
+                      </div>
+                      {presenca.latitude && presenca.longitude && (
+                        <div>
+                          <p className="text-muted-foreground">Localização:</p>
+                          <p className="font-mono text-xs">
+                            {presenca.latitude.toFixed(4)}, {presenca.longitude.toFixed(4)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
