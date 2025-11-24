@@ -29,6 +29,7 @@ interface Evento {
   vagas_disponiveis: number;
   valor: number | null;
   inscrito?: boolean;
+  pagamento_status?: 'pago' | 'pendente' | null;
   publico_alvo_perfil?: string;
   cursos?: Array<{ id: string; nome: string }>;
   palestrantes?: Array<{ nome: string; tema: string; descricao: string }>;
@@ -120,7 +121,7 @@ export default function Eventos() {
       }
 
       if (error) {
-        console.error('❌ Erro ao buscar eventos:', error);
+        console.error(' Erro ao buscar eventos:', error);
         throw error;
       }
 
@@ -130,12 +131,12 @@ export default function Eventos() {
 
         const { data: inscricoes, error: inscricoesError } = await supabase
           .from('inscricoes')
-          .select('evento_id, status')
+          .select('evento_id, status, pagamento_status')
           .eq('usuario_email', userEmail)
           .in('evento_id', eventosIds);
 
         if (inscricoesError) {
-          console.error('❌ Erro ao buscar inscrições:', inscricoesError);
+          console.error(' Erro ao buscar inscrições:', inscricoesError);
         }
 
         // Considerar inscrito apenas se o status for 'confirmada' (não cancelada)
@@ -144,6 +145,14 @@ export default function Eventos() {
             ?.filter(i => i.status === 'confirmada')
             .map(i => i.evento_id) || []
         );
+
+        // Mapa de status de pagamento por evento
+        const pagamentosPorEvento = new Map<string, 'pago' | 'pendente' | null>();
+        inscricoes?.forEach(inscricao => {
+          if (inscricao.status === 'confirmada') {
+            pagamentosPorEvento.set(inscricao.evento_id, inscricao.pagamento_status as 'pago' | 'pendente' | null);
+          }
+        });
 
         // Buscar cursos para cada evento
         const eventosComCursos = await Promise.all(
@@ -188,6 +197,7 @@ export default function Eventos() {
         const eventosComInscricao = eventosFiltradosPorCurso.map((evento: any) => ({
           ...evento,
           inscrito: inscritosIds.has(evento.id),
+          pagamento_status: pagamentosPorEvento.get(evento.id) || null,
           palestrantes: evento.palestrantes || [],
           coordenador: evento.coordenador_id || null
         }));
@@ -197,7 +207,7 @@ export default function Eventos() {
         setEventos(data || []);
       }
     } catch (error) {
-      console.error('❌ Erro ao carregar eventos:', error);
+      console.error(' Erro ao carregar eventos:', error);
       toast.error('Erro ao carregar eventos');
     } finally {
       setLoading(false);
@@ -873,10 +883,20 @@ export default function Eventos() {
                         <FileText className="w-3 h-3" />
                         Gratuito
                       </Badge>
-                    ) : (
+                    ) : eventoSelecionado.inscrito && eventoSelecionado.pagamento_status === 'pago' ? (
                       <Badge variant="default" className="gap-1 text-xs">
                         <DollarSign className="w-3 h-3" />
                         Pago
+                      </Badge>
+                    ) : eventoSelecionado.inscrito && eventoSelecionado.pagamento_status === 'pendente' ? (
+                      <Badge variant="outline" className="gap-1 text-xs">
+                        <Clock className="w-3 h-3" />
+                        Pagamento Pendente
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="gap-1 text-xs">
+                        <DollarSign className="w-3 h-3" />
+                        R$ {eventoSelecionado.valor.toFixed(2).replace('.', ',')}
                       </Badge>
                     )}
                   </div>

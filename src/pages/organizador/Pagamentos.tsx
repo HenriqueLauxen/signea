@@ -8,7 +8,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DollarSign, Users, Search, Download, CheckCircle2, XCircle, Clock, Loader2, TrendingUp } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { modal } from "@/contexts/ModalContext";
 import { useToast } from "@/contexts/ToastContext";
 
 interface Inscricao {
@@ -48,22 +47,21 @@ export default function Pagamentos() {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError || !session?.user?.email) {
-        modal.error('Você precisa estar logado');
+        toast.error('Você precisa estar logado');
         setLoading(false);
         return;
       }
 
-      // Buscar eventos pagos do organizador
+      // Buscar eventos pagos (todos os organizadores podem ver todos os eventos)
       const { data: eventosData, error: eventosError } = await supabase
         .from('eventos')
         .select('id, titulo, valor, data_inicio, data_fim')
-        .eq('organizador_email', session.user.email)
         .gt('valor', 0)
         .order('data_inicio', { ascending: false });
 
       if (eventosError) {
         console.error('Erro ao buscar eventos:', eventosError);
-        modal.error(`Erro ao carregar eventos: ${eventosError.message}`);
+        toast.error(`Erro ao carregar eventos: ${eventosError.message}`);
         setLoading(false);
         return;
       }
@@ -71,6 +69,7 @@ export default function Pagamentos() {
       setEventos(eventosData || []);
 
       if (!eventosData || eventosData.length === 0) {
+        toast.info('Você não tem eventos pagos cadastrados');
         setPagamentos([]);
         setLoading(false);
         return;
@@ -87,7 +86,7 @@ export default function Pagamentos() {
 
       if (inscricoesError) {
         console.error('Erro ao buscar inscrições:', inscricoesError);
-        modal.error(`Erro ao carregar inscrições: ${inscricoesError.message}`);
+        toast.error(`Erro ao carregar inscrições: ${inscricoesError.message}`);
         setLoading(false);
         return;
       }
@@ -105,7 +104,7 @@ export default function Pagamentos() {
       setPagamentos(pagamentosInfo);
     } catch (error: any) {
       console.error('Erro ao carregar dados:', error);
-      modal.error(`Erro: ${error.message || 'Erro desconhecido'}`);
+      toast.error(`Erro: ${error.message || 'Erro desconhecido'}`);
     } finally {
       setLoading(false);
     }
@@ -150,7 +149,7 @@ export default function Pagamentos() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    modal.success('CSV exportado com sucesso!');
+    toast.success('CSV exportado com sucesso!');
   };
 
   const pagamentosFiltrados = filtrarPagamentos();
@@ -326,3 +325,4 @@ export default function Pagamentos() {
     </div>
   );
 }
+

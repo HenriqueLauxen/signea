@@ -8,7 +8,7 @@ import { isValidInstitutionalEmail, getEmailDomain, VALID_EMAIL_DOMAINS } from '
 // Função auxiliar para testar
 function testEmail(email: string, expected: boolean, description: string) {
   const result = isValidInstitutionalEmail(email);
-  const status = result === expected ? '✅' : '❌';
+  const status = result === expected ? 'OK' : 'ERRO';
   console.log(`${status} ${description}`);
   console.log(`   Email: "${email}" - Resultado: ${result} (Esperado: ${expected})`);
   if (result !== expected) {

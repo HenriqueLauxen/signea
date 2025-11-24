@@ -44,6 +44,9 @@ export default function MeusEventos() {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [eventoToCancel, setEventoToCancel] = useState<string | null>(null);
   const [canceling, setCanceling] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [eventoToDelete, setEventoToDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const carregarEventos = async () => {
     try {
@@ -56,27 +59,11 @@ export default function MeusEventos() {
         return;
       }
 
-      // Buscar campus do usuário (através do relacionamento)
-      const { data: userData } = await supabase
-        .from('usuarios')
-        .select('campus_id, campus:campus_id(nome)')
-        .eq('email', session.user.email)
-        .single();
-
-      const userCampusNome = (userData?.campus as any)?.nome;
-
-      // Buscar TODOS os eventos do organizador ou do campus
-      let query = supabase
+      // Buscar TODOS os eventos (todos os organizadores podem ver todos os eventos)
+      const { data, error } = await supabase
         .from('eventos')
         .select('*')
         .order('created_at', { ascending: false });
-
-      // Se o usuário tem campus definido, filtrar por campus (eventos.campus é string)
-      if (userCampusNome) {
-        query = query.eq('campus', userCampusNome);
-      }
-
-      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -162,6 +149,37 @@ export default function MeusEventos() {
       setCanceling(false);
       setCancelDialogOpen(false);
       setEventoToCancel(null);
+    }
+  };
+
+  const handleExcluirEvento = (eventoId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Impede navegação
+    setEventoToDelete(eventoId);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmarExclusao = async () => {
+    if (!eventoToDelete) return;
+
+    try {
+      setDeleting(true);
+
+      const { error } = await supabase
+        .from('eventos')
+        .delete()
+        .eq('id', eventoToDelete);
+
+      if (error) throw error;
+
+      toast.success('Evento excluído com sucesso');
+      carregarEventos(); // Recarrega lista
+    } catch (error) {
+      console.error('Erro ao excluir evento:', error);
+      toast.error('Erro ao excluir evento');
+    } finally {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
+      setEventoToDelete(null);
     }
   };
 
@@ -303,25 +321,39 @@ export default function MeusEventos() {
 
                   {/* Botões de Ação */}
                   <div className="flex gap-2 pt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => handleEditarEvento(evento.id, e)}
-                      className="flex-1"
-                    >
-                      <Pencil className="w-4 h-4 mr-2" />
-                      Editar
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => handleCancelarEvento(evento.id, e)}
-                      className="flex-1 text-red-500 hover:text-red-600 hover:border-red-500/50"
-                      disabled={evento.status === 'cancelado'}
-                    >
-                      <XCircle className="w-4 h-4 mr-2" />
-                      {evento.status === 'cancelado' ? 'Cancelado' : 'Cancelar'}
-                    </Button>
+                    {evento.status !== 'cancelado' && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => handleEditarEvento(evento.id, e)}
+                          className="flex-1"
+                        >
+                          <Pencil className="w-4 h-4 mr-2" />
+                          Editar
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => handleCancelarEvento(evento.id, e)}
+                          className="flex-1 text-red-500 hover:text-red-600 hover:border-red-500/50"
+                        >
+                          <XCircle className="w-4 h-4 mr-2" />
+                          Cancelar
+                        </Button>
+                      </>
+                    )}
+                    {evento.status === 'cancelado' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => handleExcluirEvento(evento.id, e)}
+                        className="flex-1 text-red-600 hover:text-red-700 hover:border-red-600/50"
+                      >
+                        <XCircle className="w-4 h-4 mr-2" />
+                        Excluir Evento
+                      </Button>
+                    )}
                   </div>
                 </div>
               </Card>
@@ -348,6 +380,29 @@ export default function MeusEventos() {
               className="bg-red-500 hover:bg-red-600"
             >
               {canceling ? 'Cancelando...' : 'Sim, cancelar evento'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dialog de Confirmação de Exclusão */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Evento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir permanentemente este evento? Esta ação não pode ser desfeita.
+              Todos os dados relacionados (inscrições, presenças, certificados) serão removidos permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmarExclusao}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deleting ? 'Excluindo...' : 'Sim, excluir permanentemente'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

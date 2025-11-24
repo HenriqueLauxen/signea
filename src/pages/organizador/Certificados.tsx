@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Award, Users, Search, Download, CheckCircle2, Clock, Loader2, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { modal } from "@/contexts/ModalContext";
+import { useToast } from "@/contexts/ToastContext";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,6 +46,7 @@ interface EventoComStats extends Evento {
 }
 
 export default function Certificados() {
+  const toast = useToast();
   const [eventos, setEventos] = useState<EventoComStats[]>([]);
   const [certificados, setCertificados] = useState<Certificado[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,23 +61,22 @@ export default function Certificados() {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError || !session?.user?.email) {
-        modal.error('Você precisa estar logado');
+        toast.error('Você precisa estar logado');
         setLoading(false);
         return;
       }
 
-      // Buscar eventos que geram certificado
+      // Buscar eventos que geram certificado (todos os organizadores podem ver todos os eventos)
       const { data: eventosData, error: eventosError } = await supabase
         .from('eventos')
         .select('id, titulo, data_inicio, data_fim, carga_horaria, gera_certificado')
-        .eq('organizador_email', session.user.email)
         .eq('gera_certificado', true)
         .eq('status', 'finalizado')
         .order('data_inicio', { ascending: false });
 
       if (eventosError) {
         console.error('Erro ao buscar eventos:', eventosError);
-        modal.error(`Erro ao carregar eventos: ${eventosError.message}`);
+        toast.error(`Erro ao carregar eventos: ${eventosError.message}`);
         setLoading(false);
         return;
       }
@@ -134,7 +134,7 @@ export default function Certificados() {
       }
     } catch (error: any) {
       console.error('Erro ao carregar dados:', error);
-      modal.error(`Erro: ${error.message || 'Erro desconhecido'}`);
+      toast.error(`Erro: ${error.message || 'Erro desconhecido'}`);
     } finally {
       setLoading(false);
     }
@@ -155,7 +155,7 @@ export default function Certificados() {
         .eq('evento_id', eventoId);
 
       if (!presencas || presencas.length === 0) {
-        modal.error('Nenhuma presença registrada para este evento');
+        toast.error('Nenhuma presença registrada para este evento');
         return;
       }
 
@@ -177,7 +177,7 @@ export default function Certificados() {
         .map(([email]) => email);
 
       if (usuariosElegiveis.length === 0) {
-        modal.error('Nenhum participante atingiu 75% de presença');
+        toast.error('Nenhum participante atingiu 75% de presença');
         return;
       }
 
@@ -202,11 +202,11 @@ export default function Certificados() {
 
       if (error) throw error;
 
-      modal.success(`${usuariosElegiveis.length} certificados emitidos com sucesso!`);
+      toast.success(`${usuariosElegiveis.length} certificados emitidos com sucesso!`);
       carregarDados();
     } catch (error: any) {
       console.error('Erro ao emitir certificados:', error);
-      modal.error(`Erro ao emitir certificados: ${error.message}`);
+      toast.error(`Erro ao emitir certificados: ${error.message}`);
     } finally {
       setEmitindoCertificados(false);
       setEventoParaEmitir(null);
@@ -250,7 +250,7 @@ export default function Certificados() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    modal.success('CSV exportado com sucesso!');
+    toast.success('CSV exportado com sucesso!');
   };
 
   const getEventoNome = (eventoId: string) => {
@@ -457,3 +457,4 @@ export default function Certificados() {
     </div>
   );
 }
+

@@ -20,7 +20,6 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { modal } from "@/contexts/ModalContext";
 import { useToast } from "@/contexts/ToastContext";
 
 interface EventoRelatorio {
@@ -57,21 +56,20 @@ export default function Relatorios() {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
       if (sessionError || !session?.user?.email) {
-        modal.error('Você precisa estar logado');
+        toast.error('Você precisa estar logado');
         setLoading(false);
         return;
       }
 
-      // Buscar eventos do organizador
+      // Buscar todos os eventos (todos os organizadores podem ver todos os eventos)
       const { data: eventosData, error: eventosError } = await supabase
         .from('eventos')
         .select('*')
-        .eq('organizador_email', session.user.email)
         .order('data_inicio', { ascending: false });
 
       if (eventosError) {
         console.error('Erro ao buscar eventos:', eventosError);
-        modal.error(`Erro ao carregar eventos: ${eventosError.message}`);
+        toast.error(`Erro ao carregar eventos: ${eventosError.message}`);
         setLoading(false);
         return;
       }
@@ -131,7 +129,7 @@ export default function Relatorios() {
       setEventos(eventosComRelatorio);
     } catch (error: any) {
       console.error('Erro ao carregar dados:', error);
-      modal.error(`Erro: ${error.message || 'Erro desconhecido'}`);
+      toast.error(`Erro: ${error.message || 'Erro desconhecido'}`);
     } finally {
       setLoading(false);
     }
@@ -182,7 +180,7 @@ export default function Relatorios() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    modal.success('Relatório exportado com sucesso!');
+    toast.success('Relatório exportado com sucesso!');
   };
 
   if (loading) {
@@ -432,3 +430,4 @@ export default function Relatorios() {
     </div>
   );
 }
+

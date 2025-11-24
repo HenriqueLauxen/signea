@@ -8,7 +8,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar, MapPin, Users, Search, Download, CheckCircle2, XCircle, Clock, Mail, User } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { modal } from "@/contexts/ModalContext";
 import { useToast } from "@/contexts/ToastContext";
 import {
   AlertDialog,
@@ -60,29 +59,28 @@ export default function Inscricoes() {
       
       if (sessionError) {
         console.error('Erro ao obter sessão:', sessionError);
-        modal.error('Erro ao obter sessão');
+        toast.error('Erro ao obter sessão');
         setLoading(false);
         return;
       }
 
       if (!session?.user?.email) {
-        modal.error('Você precisa estar logado');
+        toast.error('Você precisa estar logado');
         setLoading(false);
         return;
       }
 
       console.log('Email do organizador:', session.user.email);
 
-      // Buscar eventos do organizador
+      // Buscar todos os eventos (todos os organizadores podem ver todos os eventos)
       const { data: eventosData, error: eventosError } = await supabase
         .from('eventos')
         .select('id, titulo')
-        .eq('organizador_email', session.user.email)
         .order('titulo');
 
       if (eventosError) {
         console.error('Erro ao buscar eventos:', eventosError);
-        modal.error(`Erro ao carregar eventos: ${eventosError.message}`);
+        toast.error(`Erro ao carregar eventos: ${eventosError.message}`);
         setLoading(false);
         return;
       }
@@ -91,6 +89,7 @@ export default function Inscricoes() {
       setEventos(eventosData || []);
 
       if (!eventosData || eventosData.length === 0) {
+        toast.info('Você ainda não criou nenhum evento');
         setInscricoes([]);
         setLoading(false);
         return;
@@ -113,7 +112,7 @@ export default function Inscricoes() {
 
       if (inscricoesError) {
         console.error('Erro ao buscar inscrições:', inscricoesError);
-        modal.error(`Erro ao carregar inscrições: ${inscricoesError.message}`);
+        toast.error(`Erro ao carregar inscrições: ${inscricoesError.message}`);
         setLoading(false);
         return;
       }
@@ -147,7 +146,7 @@ export default function Inscricoes() {
       setInscricoes(inscricoesComEventos as Inscricao[]);
     } catch (error: any) {
       console.error('Erro ao carregar inscrições:', error);
-      modal.error(`Erro: ${error.message || 'Erro desconhecido'}`);
+      toast.error(`Erro: ${error.message || 'Erro desconhecido'}`);
     } finally {
       setLoading(false);
     }
@@ -162,11 +161,11 @@ export default function Inscricoes() {
 
       if (error) throw error;
 
-      modal.success('Inscrição cancelada com sucesso');
+      toast.success('Inscrição cancelada com sucesso');
       carregarDados();
     } catch (error) {
       console.error('Erro ao cancelar inscrição:', error);
-      modal.error('Erro ao cancelar inscrição');
+      toast.error('Erro ao cancelar inscrição');
     } finally {
       setInscricaoParaCancelar(null);
     }
@@ -192,7 +191,7 @@ export default function Inscricoes() {
     link.download = `inscricoes_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
     
-    modal.success('Relatório exportado com sucesso');
+    toast.success('Relatório exportado com sucesso');
   }
 
   function filtrarInscricoes() {
@@ -458,3 +457,4 @@ export default function Inscricoes() {
     </div>
   );
 }
+
