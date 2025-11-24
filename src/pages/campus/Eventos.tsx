@@ -164,7 +164,7 @@ export default function Eventos() {
               <Card
                 key={evento.id}
                 className="overflow-hidden hover:glow-border-hover transition-all cursor-pointer"
-                onClick={() => navigate(`/organizador/evento/${evento.id}`)}
+                  onClick={() => navigate(`/campus/evento/${evento.id}`)}
               >
                 {/* Banner */}
                 <div

@@ -48,6 +48,7 @@ import EventosCampus from "./pages/campus/Eventos";
 import UsuariosCampus from "./pages/campus/Usuarios";
 import CertificadosCampus from "./pages/campus/Certificados";
 import Coordenadores from "./pages/campus/Coordenadores";
+import EventoDetalhesCampus from "./pages/campus/EventoDetalhes";
 
 const queryClient = new QueryClient();
 
@@ -106,6 +107,7 @@ const App = () => (
                   <Route path="/campus" element={<ProtectedRoute><Navigate to="/campus/visao-geral" replace /></ProtectedRoute>} />
                   <Route path="/campus/visao-geral" element={<ProtectedRoute><CampusLayout><VisaoGeral /></CampusLayout></ProtectedRoute>} />
                   <Route path="/campus/eventos" element={<ProtectedRoute><CampusLayout><EventosCampus /></CampusLayout></ProtectedRoute>} />
+                  <Route path="/campus/evento/:id" element={<ProtectedRoute><CampusLayout><EventoDetalhesCampus /></CampusLayout></ProtectedRoute>} />
                   <Route path="/campus/usuarios" element={<ProtectedRoute><CampusLayout><UsuariosCampus /></CampusLayout></ProtectedRoute>} />
                   <Route path="/campus/certificados" element={<ProtectedRoute><CampusLayout><CertificadosCampus /></CampusLayout></ProtectedRoute>} />
                   <Route path="/campus/coordenadores" element={<ProtectedRoute><CampusLayout><Coordenadores /></CampusLayout></ProtectedRoute>} />
