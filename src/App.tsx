@@ -19,6 +19,7 @@ import ValidateAttendance from "./pages/ValidateAttendance";
 import ValidateCertificate from "./pages/ValidateCertificate";
 import CertificadoView from "./pages/CertificadoView";
 import PagarSimulacao from "./pages/pagar-simulacao";
+import RegistrarPresencaPublica from "./pages/RegistrarPresencaPublica";
 import NotFound from "./pages/NotFound";
 
 // Usuario Pages
@@ -76,6 +77,7 @@ const App = () => (
                   <Route path="/certificado/:sha256" element={<PublicLayout><CertificadoView /></PublicLayout>} />
                   <Route path="/certificados/:sha256" element={<PublicLayout><ValidateCertificate /></PublicLayout>} />
                   <Route path="/pagar-simulacao" element={<PublicLayout><PagarSimulacao /></PublicLayout>} />
+                  <Route path="/registrar-presenca/:codigo" element={<PublicLayout><RegistrarPresencaPublica /></PublicLayout>} />
 
                   {/* Usuario Routes */}
                   <Route path="/usuario" element={<ProtectedRoute><Navigate to="/usuario/eventos" replace /></ProtectedRoute>} />

@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
+import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calendar, QrCode, Users, BarChart, Eye, EyeOff, CheckCircle2, XCircle, Clock, Loader2, Download } from "lucide-react";
+import { Calendar, QrCode, Users, BarChart, Eye, EyeOff, CheckCircle2, XCircle, Clock, Loader2, Download, Key, RefreshCw, Copy } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/contexts/ToastContext";
+import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import QRCode from "qrcode";
@@ -39,6 +41,8 @@ export default function EventoDetalhes() {
   const [showKey, setShowKey] = useState(false);
   const [selectedDia, setSelectedDia] = useState<number>(1);
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [palavrasChave, setPalavrasChave] = useState<Record<number, { palavra: string; data: string; show: boolean }>>({});
+  const [gerandoPalavraChave, setGerandoPalavraChave] = useState<Record<number, boolean>>({});
   // const [statusFilter, setStatusFilter] = useState("todos"); // This state was not used in the original code, keeping it commented out.
 
   const loading = loadingEvento || loadingInscricoes || loadingPresencas || loadingCertificados;
@@ -120,6 +124,128 @@ export default function EventoDetalhes() {
     return presencas.some(p => p.usuario_email === email && p.dia_evento === dia);
   };
 
+  // Buscar palavras-chave existentes
+  useEffect(() => {
+    if (!evento || !id) return;
+
+    const carregarPalavrasChave = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("evento_palavras_chave")
+          .select("data_evento, palavra_chave")
+          .eq("evento_id", id)
+          .order("data_evento", { ascending: true });
+
+        if (error) {
+          console.error("Erro ao carregar palavras-chave:", error);
+          return;
+        }
+
+        if (data) {
+          const palavras: Record<number, { palavra: string; data: string; show: boolean }> = {};
+          const inicio = new Date(evento.data_inicio);
+          
+          data.forEach((pc) => {
+            const dataPC = new Date(pc.data_evento);
+            const diffTime = dataPC.getTime() - inicio.getTime();
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            const dia = diffDays + 1;
+            
+            palavras[dia] = {
+              palavra: pc.palavra_chave,
+              data: pc.data_evento,
+              show: false
+            };
+          });
+
+          setPalavrasChave(palavras);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar palavras-chave:", error);
+      }
+    };
+
+    carregarPalavrasChave();
+  }, [evento, id]);
+
+  const getDataDoDia = (dia: number): Date => {
+    if (!evento) return new Date();
+    const inicio = new Date(evento.data_inicio);
+    inicio.setHours(0, 0, 0, 0);
+    const dataDia = new Date(inicio);
+    dataDia.setDate(inicio.getDate() + (dia - 1));
+    return dataDia;
+  };
+
+  const gerarPalavraChave = async (dia: number) => {
+    if (!evento || !id) return;
+
+    try {
+      setGerandoPalavraChave(prev => ({ ...prev, [dia]: true }));
+      
+      const dataDia = getDataDoDia(dia);
+      const dataDiaStr = format(dataDia, "yyyy-MM-dd");
+
+      // Gerar palavra-chave aleatória de 6 caracteres alfanuméricos
+      const caracteres = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+      let palavra = "";
+      for (let i = 0; i < 6; i++) {
+        palavra += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
+      }
+
+      // Verificar se já existe palavra-chave para este dia
+      const { data: existente } = await supabase
+        .from("evento_palavras_chave")
+        .select("id")
+        .eq("evento_id", id)
+        .eq("data_evento", dataDiaStr)
+        .maybeSingle();
+
+      if (existente) {
+        // Atualizar palavra-chave existente
+        const { error } = await supabase
+          .from("evento_palavras_chave")
+          .update({ palavra_chave: palavra })
+          .eq("id", existente.id);
+
+        if (error) throw error;
+      } else {
+        // Criar nova palavra-chave
+        const { error } = await supabase
+          .from("evento_palavras_chave")
+          .insert({
+            evento_id: id,
+            data_evento: dataDiaStr,
+            palavra_chave: palavra
+          });
+
+        if (error) throw error;
+      }
+
+      // Atualizar estado local
+      setPalavrasChave(prev => ({
+        ...prev,
+        [dia]: {
+          palavra,
+          data: dataDiaStr,
+          show: true
+        }
+      }));
+
+      toast.success(`Palavra-chave gerada para o Dia ${dia}!`);
+    } catch (error) {
+      console.error("Erro ao gerar palavra-chave:", error);
+      toast.error("Erro ao gerar palavra-chave");
+    } finally {
+      setGerandoPalavraChave(prev => ({ ...prev, [dia]: false }));
+    }
+  };
+
+  const copiarPalavraChave = (palavra: string) => {
+    navigator.clipboard.writeText(palavra);
+    toast.success("Palavra-chave copiada!");
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -170,6 +296,77 @@ export default function EventoDetalhes() {
               </Button>
             </div>
           </div>
+
+          {/* Palavra-Chave do Dia Selecionado */}
+          <Card className="p-6">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-normal">Palavra-Chave - Dia {selectedDia}</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => gerarPalavraChave(selectedDia)}
+                  disabled={gerandoPalavraChave[selectedDia]}
+                >
+                  {gerandoPalavraChave[selectedDia] ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Gerando...
+                    </>
+                  ) : palavrasChave[selectedDia] ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Gerar Nova
+                    </>
+                  ) : (
+                    <>
+                      <Key className="w-4 h-4 mr-2" />
+                      Gerar Palavra-Chave
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {palavrasChave[selectedDia] ? (
+                <div className="space-y-2">
+                  <Label>Palavra-Chave (6 caracteres)</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={palavrasChave[selectedDia].show ? palavrasChave[selectedDia].palavra : "••••••"}
+                      readOnly
+                      className="font-mono text-lg text-center tracking-wider"
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setPalavrasChave(prev => ({
+                        ...prev,
+                        [selectedDia]: { ...prev[selectedDia], show: !prev[selectedDia].show }
+                      }))}
+                    >
+                      {palavrasChave[selectedDia].show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => copiarPalavraChave(palavrasChave[selectedDia].palavra)}
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Data: {format(new Date(palavrasChave[selectedDia].data), "dd/MM/yyyy", { locale: ptBR })}
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Key className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>Nenhuma palavra-chave gerada para este dia</p>
+                  <p className="text-sm mt-1">Clique em "Gerar Palavra-Chave" para criar</p>
+                </div>
+              )}
+            </div>
+          </Card>
 
           <Card className="p-6">
             <div className="space-y-3">
