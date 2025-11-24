@@ -148,7 +148,8 @@ const ConfirmarCodigo = () => {
       const { error } = await supabase.auth.signInWithOtp({
         email: email,
         options: {
-          shouldCreateUser: false
+          shouldCreateUser: true,
+          emailRedirectTo: undefined, // Garante envio de OTP de 6 dígitos (não magic link)
         }
       });
 

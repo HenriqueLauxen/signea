@@ -157,7 +157,8 @@ const Login = () => {
       const { error } = await supabase.auth.signInWithOtp({
         email: userEmail,
         options: {
-          shouldCreateUser: false,
+          shouldCreateUser: true,
+          emailRedirectTo: undefined, // Garante envio de OTP de 6 dígitos (não magic link)
         }
       });
 
@@ -306,6 +307,7 @@ const Login = () => {
       });
 
       if (error) {
+        console.error('Erro ao verificar OTP:', error);
         setErrorMessage("Código inválido ou expirado. Verifique e tente novamente.");
         setShowError(true);
       } else {
@@ -314,6 +316,7 @@ const Login = () => {
         navigate(from, { replace: true });
       }
     } catch (err) {
+      console.error('Erro ao verificar código (catch):', err);
       setErrorMessage("Erro ao verificar código. Tente novamente.");
       setShowError(true);
     } finally {
