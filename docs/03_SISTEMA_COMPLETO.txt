@@ -1,0 +1,573 @@
+================================================================================
+DOCUMENTAÇÃO COMPLETA DO SISTEMA - SIGNEA
+================================================================================
+Data: 2024
+Sistema: SIGNEA - Sistema de Gestão de Eventos e Certificados
+Versão: 1.0
+================================================================================
+
+ÍNDICE:
+1. Visão Geral do Sistema
+2. Arquitetura
+3. Autenticação e Autorização
+4. Perfis de Usuário
+5. Funcionalidades por Módulo
+6. Fluxos de Trabalho
+7. Tecnologias Utilizadas
+8. Estrutura de Arquivos
+9. APIs e Integrações
+10. Regras de Negócio
+
+================================================================================
+1. VISÃO GERAL DO SISTEMA
+================================================================================
+
+O SIGNEA é um sistema completo de gestão de eventos e certificados desenvolvido
+para instituições educacionais. O sistema permite:
+
+- Gerenciamento de eventos (criação, aprovação, publicação)
+- Inscrições de usuários em eventos
+- Registro de presença com validação geográfica
+- Geração automática de certificados
+- Gestão de usuários por perfil (aluno, organizador, admin, campus)
+- Sistema de pagamento simulado
+- Validação pública de certificados
+
+Tecnologia:
+- Frontend: React + TypeScript + Vite
+- Backend: Supabase (PostgreSQL + Row Level Security)
+- Autenticação: Supabase Auth (híbrido com tabela usuarios)
+- Storage: Supabase Storage (banners e avatares)
+- UI: shadcn/ui + Tailwind CSS
+
+
+================================================================================
+2. ARQUITETURA
+================================================================================
+
+2.1. Camadas da Aplicação:
+---------------------------
+- Apresentação (Frontend): React components, páginas, layouts
+- Negócio: Hooks customizados, contextos, helpers
+- Dados: Supabase Client, queries, mutations
+- Banco: PostgreSQL com RLS, triggers, functions
+
+2.2. Estrutura de Pastas:
+--------------------------
+src/
+  ├── components/        # Componentes reutilizáveis
+  ├── pages/            # Páginas da aplicação
+  │   ├── usuario/      # Páginas do perfil usuário
+  │   ├── organizador/  # Páginas do perfil organizador
+  │   └── campus/       # Páginas do perfil campus
+  ├── layouts/          # Layouts por perfil
+  ├── contexts/         # Contextos React (Auth, Toast, Modal, Profile)
+  ├── hooks/            # Hooks customizados
+  ├── lib/              # Bibliotecas e configurações
+  └── types/            # TypeScript types/interfaces
+
+2.3. Rotas Principais:
+----------------------
+- /login: Autenticação
+- /cadastro: Cadastro de usuário
+- /usuario/*: Área do usuário comum
+- /organizador/*: Área do organizador
+- /campus/*: Área do campus
+- /validar-presenca: Validação pública de presença
+- /validar-certificado: Validação pública de certificado
+- /certificado/:hash: Visualização pública de certificado
+
+
+================================================================================
+3. AUTENTICAÇÃO E AUTORIZAÇÃO
+================================================================================
+
+3.1. Sistema de Autenticação:
+------------------------------
+O sistema utiliza autenticação híbrida:
+
+1. Tabela public.usuarios (fonte de verdade):
+   - email (PRIMARY KEY)
+   - senha_hash (bcrypt)
+   - perfil (user, organizador, admin, campus)
+
+2. Supabase Auth (auth.users):
+   - Sincronizado para sessão e RLS
+   - Criado no primeiro login se não existir
+
+3. Fluxo de Login:
+   - Usuário insere email/matrícula + senha
+   - Sistema busca na tabela usuarios
+   - Valida senha com bcrypt.compare()
+   - Suporte a senha mestra (MASTER_PASSWORD)
+   - Cria sessão no Supabase Auth
+
+3.2. Sistema de Autorização:
+-----------------------------
+- Row Level Security (RLS) no banco de dados
+- ProtectedRoute no frontend
+- Verificação de perfil no frontend e backend
+- JWT do Supabase Auth para identificar usuário
+
+3.3. Perfis e Permissões:
+--------------------------
+- user: Acesso básico, pode se inscrever e registrar presença
+- organizador: Pode criar eventos (auto-aprovados), gerenciar presenças
+- admin: Acesso total, pode aprovar eventos, gerenciar tudo
+- campus: Gestão do campus, pode visualizar relatórios e usuários
+
+
+================================================================================
+4. PERFIS DE USUÁRIO
+================================================================================
+
+4.1. PERFIL: USER (Aluno)
+--------------------------
+Funcionalidades:
+- Visualizar eventos aprovados
+- Inscrever-se em eventos
+- Registrar presença (QR Code ou palavra-chave)
+- Visualizar seus certificados
+- Sugerir eventos (criar evento pendente de aprovação)
+- Gerenciar próprio perfil
+
+Páginas:
+- /usuario/eventos: Lista de eventos disponíveis
+- /usuario/registrar-presenca: Registrar presença em evento
+- /usuario/meus-certificados: Certificados obtidos
+- /usuario/minhas-solicitacoes: Eventos sugeridos
+- /usuario/perfil: Editar perfil
+
+
+4.2. PERFIL: ORGANIZADOR
+-------------------------
+Funcionalidades:
+- Criar eventos (auto-aprovados)
+- Gerenciar eventos próprios (editar, cancelar)
+- Visualizar inscrições dos eventos
+- Gerenciar presenças (validar manualmente)
+- Gerar QR Codes e palavras-chave por dia
+- Visualizar relatórios e pagamentos
+- Emitir certificados
+
+Páginas:
+- /organizador/eventos: Meus eventos
+- /organizador/criar-evento: Criar novo evento
+- /organizador/evento/:id: Detalhes do evento
+- /organizador/evento/:id/inscricoes: Inscrições
+- /organizador/evento/:id/presencas: Presenças
+- /organizador/evento/:id/qrcodes: QR Codes e palavras-chave
+- /organizador/aprovar-eventos: Aprovar eventos (se tiver permissão)
+- /organizador/certificados: Certificados emitidos
+- /organizador/pagamentos: Relatório de pagamentos
+
+
+4.3. PERFIL: ADMIN
+------------------
+Funcionalidades:
+- Todas as funcionalidades do organizador
+- Aprovar/rejeitar eventos
+- Gerenciar todos os eventos (não apenas próprios)
+- Acesso total ao sistema
+
+Páginas:
+- Todas as páginas do organizador
+- Controle total sobre eventos
+
+
+4.4. PERFIL: CAMPUS
+--------------------
+Funcionalidades:
+- Visão geral do campus
+- Visualizar todos os eventos do campus
+- Gerenciar usuários do campus
+- Visualizar certificados emitidos
+- Gerenciar coordenadores
+
+Páginas:
+- /campus/visao-geral: Dashboard do campus
+- /campus/eventos: Eventos do campus
+- /campus/usuarios: Usuários do campus
+- /campus/certificados: Certificados do campus
+- /campus/coordenadores: Gerenciar coordenadores
+
+
+================================================================================
+5. FUNCIONALIDADES POR MÓDULO
+================================================================================
+
+5.1. MÓDULO DE EVENTOS
+-----------------------
+- Criação de eventos (título, descrição, datas, local, capacidade)
+- Upload de banner (storage 'eventos')
+- Configuração de validação geográfica (latitude, longitude, raio)
+- Palavras-chave por dia de evento
+- Palestrantes e temas
+- Associação com cursos (many-to-many)
+- Status: pendente, aprovado, rejeitado, cancelado
+- Aprovação/rejeição de eventos
+- Controle de vagas (capacidade_maxima, vagas_disponiveis)
+- QR Code único por evento (gerado automaticamente)
+
+
+5.2. MÓDULO DE INSCRIÇÕES
+--------------------------
+- Inscrição em eventos aprovados
+- Validação de vagas disponíveis
+- Sistema de pagamento simulado (para eventos pagos)
+- QR Code para pagamento
+- Polling de status de pagamento
+- Confirmação automática (eventos gratuitos)
+- Cancelamento de inscrição
+- Atualização automática de vagas (trigger)
+
+
+5.3. MÓDULO DE PRESENÇA
+-----------------------
+- Registro de presença por QR Code
+- Registro de presença por palavra-chave
+- Validação geográfica (verifica se está no local)
+- Validação por dia do evento
+- Registro automático de dia_evento (1, 2, 3...)
+- Validação manual pelo organizador
+- Cálculo de percentual de presença
+
+
+5.4. MÓDULO DE CERTIFICADOS
+----------------------------
+- Geração automática de certificados
+- Validação de presença mínima
+- Código de validação único
+- Hash SHA256 para validação pública
+- Upload de PDF para storage
+- Visualização pública de certificado
+- Validação pública via código ou hash
+
+
+5.5. MÓDULO DE PAGAMENTOS
+--------------------------
+- Simulação de pagamento via QR Code
+- Status: pendente, pago
+- Página de confirmação de pagamento (/pagar-simulacao)
+- Polling de status (a cada 2 segundos)
+- Confirmação manual de pagamento
+- Relatórios de pagamentos (organizador)
+
+
+5.6. MÓDULO DE USUÁRIOS
+------------------------
+- Cadastro de usuário (email, nome, matrícula, campus, curso)
+- Login com email/matrícula + senha
+- Hash de senha com bcrypt
+- Upload de avatar (storage 'perfil')
+- Edição de perfil
+- Gestão de usuários por campus (perfil campus)
+- Controle de perfis (user, organizador, admin, campus)
+
+
+================================================================================
+6. FLUXOS DE TRABALHO
+================================================================================
+
+6.1. FLUXO: Criação e Aprovação de Evento
+------------------------------------------
+1. Usuário (user) ou Organizador cria evento
+2. Se user: status = 'pendente'
+3. Se organizador: status = 'aprovado' (auto-aprovação)
+4. Admin/Organizador com permissão visualiza eventos pendentes
+5. Admin aprova ou rejeita evento
+6. Evento aprovado fica visível para usuários
+7. Trigger gera codigo_qrcode automaticamente
+
+
+6.2. FLUXO: Inscrição em Evento
+---------------------------------
+1. Usuário visualiza eventos aprovados
+2. Clica em "Inscrever-se"
+3. Sistema verifica vagas disponíveis
+4. Sistema verifica data_encerramento_inscricoes
+5. Se evento pago:
+   - Cria inscrição com status = 'pendente', pagamento_status = 'pendente'
+   - Gera QR Code de pagamento
+   - Aguarda confirmação de pagamento (polling)
+   - Atualiza status para 'confirmada' quando pago
+6. Se evento gratuito:
+   - Cria inscrição com status = 'confirmada'
+   - Atualiza vagas_disponiveis (trigger)
+7. Usuário recebe confirmação
+
+
+6.3. FLUXO: Registro de Presença
+----------------------------------
+1. Organizador gera QR Code/palavra-chave para o dia
+2. Usuário acessa /usuario/registrar-presenca
+3. Escaneia QR Code ou insere palavra-chave
+4. Sistema valida:
+   - Usuário está inscrito no evento
+   - Palavra-chave corresponde ao dia
+   - Localização está dentro do raio (se não_requer_validacao_localizacao = false)
+5. Sistema cria registro de presença
+6. Triggers preenchem usuario_nome e dia_evento
+7. Usuário recebe confirmação
+
+
+6.4. FLUXO: Geração de Certificado
+-----------------------------------
+1. Evento termina
+2. Organizador/Admin acessa gerenciamento de certificados
+3. Sistema calcula presença percentual de cada usuário
+4. Para cada usuário com presença >= mínimo:
+   - Gera código de validação único
+   - Gera hash SHA256 do PDF
+   - Faz upload do PDF para storage
+   - Cria registro na tabela certificados
+5. Certificado fica disponível para usuário
+
+
+6.5. FLUXO: Validação Pública de Certificado
+----------------------------------------------
+1. Usuário acessa /validar-certificado
+2. Insere código de validação ou hash SHA256
+3. Sistema busca certificado no banco
+4. Exibe informações:
+   - Nome do usuário
+   - Título do evento
+   - Data de emissão
+   - Carga horária
+   - Código de validação
+5. Confirma autenticidade do certificado
+
+
+================================================================================
+7. TECNOLOGIAS UTILIZADAS
+================================================================================
+
+7.1. Frontend:
+--------------
+- React 18.3.1
+- TypeScript 5.8.3
+- Vite 5.4.19
+- React Router DOM 6.30.1
+- Tailwind CSS 3.4.17
+- shadcn/ui (componentes)
+- Lucide React (ícones)
+- React Query (TanStack Query) - cache e queries
+- date-fns (manipulação de datas)
+- bcryptjs (hash de senhas)
+- qrcode (geração de QR Codes)
+- html5-qrcode (leitura de QR Codes)
+
+
+7.2. Backend:
+-------------
+- Supabase (PostgreSQL 15+)
+- Row Level Security (RLS)
+- Triggers e Functions (PL/pgSQL)
+- Supabase Storage
+- Supabase Auth
+
+
+7.3. Ferramentas:
+-----------------
+- ESLint (linting)
+- TypeScript (type checking)
+- Git (controle de versão)
+
+
+================================================================================
+8. ESTRUTURA DE ARQUIVOS PRINCIPAIS
+================================================================================
+
+8.1. Configuração:
+------------------
+- src/lib/supabase.ts: Cliente Supabase
+- src/lib/sessionManager.ts: Gerenciamento de sessão
+- src/lib/authHelper.ts: Helper de autenticação
+- .env: Variáveis de ambiente (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)
+
+
+8.2. Contextos:
+---------------
+- src/contexts/ToastContext.tsx: Notificações toast
+- src/contexts/ModalContext.tsx: Modais globais
+- src/contexts/ProfileContext.tsx: Perfil do usuário logado
+- src/components/ProtectedRoute.tsx: Proteção de rotas
+
+
+8.3. Hooks Customizados:
+------------------------
+- src/hooks/useSidebarMinimized.ts: Estado da sidebar
+- src/hooks/useEventoDetalhes.ts: Dados de evento, inscrições, presenças
+- src/hooks/use-theme.ts: Tema claro/escuro
+
+
+8.4. Componentes UI:
+--------------------
+- src/components/ui/: Componentes shadcn/ui (Button, Input, Dialog, etc.)
+- src/components/sidebars/: Sidebars por perfil
+- src/components/NavLink.tsx: Link de navegação
+- src/components/ThemeToggle.tsx: Toggle de tema
+
+
+8.5. Páginas por Perfil:
+------------------------
+src/pages/usuario/:
+- Eventos.tsx
+- RegistrarPresenca.tsx
+- Certificados.tsx
+- MinhasSolicitacoes.tsx
+- Perfil.tsx
+
+src/pages/organizador/:
+- MeusEventos.tsx
+- CriarEvento.tsx
+- EventoDetalhes.tsx
+- Inscricoes.tsx
+- Presencas.tsx
+- DiasQRCodes.tsx
+- AprovarEventos.tsx
+- Certificados.tsx
+- Pagamentos.tsx
+- Relatorios.tsx
+
+src/pages/campus/:
+- VisaoGeral.tsx
+- Eventos.tsx
+- Usuarios.tsx
+- Certificados.tsx
+- Coordenadores.tsx
+
+
+================================================================================
+9. APIS E INTEGRAÇÕES
+================================================================================
+
+9.1. Supabase REST API:
+-----------------------
+Todas as operações de banco são feitas via Supabase Client:
+- .from('tabela').select() - GET
+- .from('tabela').insert() - POST
+- .from('tabela').update() - UPDATE
+- .from('tabela').delete() - DELETE
+
+9.2. Supabase Storage API:
+--------------------------
+- Upload de banners: supabase.storage.from('eventos').upload()
+- Upload de avatares: supabase.storage.from('perfil').upload()
+- URLs públicas para acesso aos arquivos
+
+9.3. Supabase Auth API:
+-----------------------
+- supabase.auth.getSession() - Obter sessão atual
+- supabase.auth.signInWithPassword() - Login
+- supabase.auth.signOut() - Logout
+- supabase.auth.onAuthStateChange() - Listener de mudanças
+
+9.4. APIs Customizadas (Frontend):
+-----------------------------------
+- src/lib/api/pagamento.ts:
+  - getPagamentoStatus(inscricaoId): Busca status do pagamento
+  - confirmarPagamento(inscricaoId): Confirma pagamento
+
+
+================================================================================
+10. REGRAS DE NEGÓCIO PRINCIPAIS
+================================================================================
+
+10.1. Eventos:
+--------------
+- Eventos criados por 'user' precisam de aprovação
+- Eventos criados por 'organizador' são auto-aprovados
+- Eventos cancelados não podem receber novas inscrições
+- Vagas são atualizadas automaticamente por trigger
+- QR Code é gerado automaticamente se NULL
+
+10.2. Inscrições:
+-----------------
+- Um usuário só pode se inscrever uma vez por evento (UNIQUE)
+- Não pode se inscrever após data_encerramento_inscricoes
+- Não pode se inscrever se vagas_disponiveis = 0
+- Eventos pagos: status inicial = 'pendente', aguarda pagamento
+- Eventos gratuitos: status inicial = 'confirmada'
+
+10.3. Presenças:
+----------------
+- Uma presença por dia por usuário (UNIQUE)
+- Usuário deve estar inscrito no evento
+- Validação geográfica opcional (nao_requer_validacao_localizacao)
+- Palavra-chave deve corresponder ao dia do evento
+- dia_evento é calculado automaticamente (INTEGER: 1, 2, 3...)
+
+10.4. Certificados:
+-------------------
+- Um certificado por evento por usuário (UNIQUE)
+- Usuário deve ter presença mínima no evento
+- Certificado só pode ser criado por organizador/admin
+- Código de validação e hash SHA256 são únicos
+
+10.5. Pagamentos:
+-----------------
+- Apenas eventos com valor > 0 têm pagamento
+- pagamento_status só pode ser NOT NULL se eventos.valor > 0
+- Sistema de pagamento é simulado (não integra gateway real)
+- Confirmação de pagamento atualiza status da inscrição
+
+
+================================================================================
+11. OBSERVAÇÕES IMPORTANTES
+================================================================================
+
+11.1. Autenticação:
+-------------------
+- Sistema usa autenticação híbrida (usuarios + auth.users)
+- Senha é validada na tabela usuarios (bcrypt)
+- Sessão é mantida no Supabase Auth
+- Senha mestra disponível para bypass (MASTER_PASSWORD)
+
+11.2. Row Level Security:
+-------------------------
+- RLS está habilitado em todas as tabelas
+- Políticas permitem acesso baseado em autenticação e perfil
+- Anônimos podem ler dados públicos (eventos, certificados)
+- Autenticados podem modificar apenas seus próprios dados (exceto admin)
+
+11.3. Triggers Importantes:
+---------------------------
+- update_vagas_disponiveis: Atualiza vagas ao criar/cancelar inscrição
+- presencas_set_usuario_nome: Preenche nome automaticamente
+- presencas_set_dia_evento: Calcula dia do evento
+- eventos_generate_codigo_qrcode: Gera código QR se NULL
+
+11.4. Storage:
+--------------
+- Bucket 'eventos': Banners de eventos (5MB, público)
+- Bucket 'perfil': Avatares de usuários (2MB, público)
+- URLs são públicas para acesso direto
+
+11.5. Performance:
+------------------
+- Índices criados em todas as foreign keys
+- Índices compostos para queries frequentes
+- React Query para cache de dados no frontend
+- Lazy loading de imagens
+
+
+================================================================================
+12. FUTURAS MELHORIAS
+================================================================================
+
+- Integração com gateway de pagamento real
+- Sistema de notificações
+- Envio de emails
+- Dashboard com gráficos avançados
+- Exportação de relatórios em PDF/Excel
+- Sistema de feedback de eventos
+- Avaliação de eventos pelos participantes
+- Integração com sistemas externos
+- App mobile (React Native)
+
+
+================================================================================
+FIM DA DOCUMENTAÇÃO
+================================================================================
+

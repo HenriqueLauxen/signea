@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PlusCircle, FileText, Clock, CheckCircle, XCircle, Calendar as CalendarIcon } from "lucide-react";
-import { modal } from "@/contexts/ModalContext";
+import { useToast } from "@/contexts/ToastContext";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
@@ -27,6 +27,7 @@ type Solicitacao = {
 };
 
 export default function MinhasSolicitacoes() {
+  const toast = useToast();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [solicitacoes, setSolicitacoes] = useState<Solicitacao[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +79,7 @@ export default function MinhasSolicitacoes() {
       if (error) {
         console.error("Erro ao buscar solicitações:", error);
         if (mounted) {
-          modal.error("Erro ao carregar solicitações");
+          toast.error("Erro ao carregar solicitações");
           setSolicitacoes([]);
         }
         return;
@@ -90,7 +91,7 @@ export default function MinhasSolicitacoes() {
     } catch (err) {
       console.error(err);
       if (mounted) {
-        modal.error("Erro ao carregar solicitações");
+        toast.error("Erro ao carregar solicitações");
         setSolicitacoes([]);
       }
     } finally {
@@ -161,38 +162,43 @@ export default function MinhasSolicitacoes() {
 
   const handleCreateSolicitacao = async () => {
     if (!titulo.trim()) {
-      modal.error("Preencha o título do evento");
+      toast.error("Preencha o título do evento");
       return;
     }
 
     if (!descricao.trim()) {
-      modal.error("Preencha a descrição do evento");
+      toast.error("Preencha a descrição do evento");
       return;
     }
 
     if (!dateRange?.from || !dateRange?.to) {
-      modal.error("Selecione o período do evento");
+      toast.error("Selecione o período do evento");
       return;
     }
 
     if (!capacidadeMaxima || capacidadeMaxima <= 0) {
-      modal.error("Informe a capacidade máxima (maior que 0)");
+      toast.error("Informe a capacidade máxima (maior que 0)");
       return;
     }
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user?.email) {
-        modal.error("Você precisa estar logado");
+        toast.error("Você precisa estar logado");
         return;
       }
 
-      // Buscar nome do usuário
+      // Buscar nome e perfil do usuário
       const { data: userData } = await supabase
         .from('usuarios')
-        .select('nome_completo')
+        .select('nome_completo, perfil')
         .eq('email', session.user.email)
         .single();
+
+      // Se for organizador, aprovar automaticamente
+      const isOrganizador = userData?.perfil === 'organizador';
+      const statusEvento = isOrganizador ? 'aprovado' : 'pendente';
+      const dataAprovacao = isOrganizador ? new Date().toISOString() : undefined;
 
       const payload: Record<string, unknown> = {
         titulo: titulo.trim(),
@@ -208,14 +214,15 @@ export default function MinhasSolicitacoes() {
         publico_alvo_perfil: publicoAlvoPerfil || 'aluno',
         organizador_email: session.user.email,
         organizador_nome: userData?.nome_completo || session.user.email,
-        status: "pendente",
+        status: statusEvento,
+        data_aprovacao: dataAprovacao,
         gera_certificado: true, // Certificado é obrigatório
       };
 
       const { error } = await supabase.from("eventos").insert(payload);
       if (error) throw error;
 
-      modal.success("Solicitação enviada com sucesso!");
+      toast.success("Solicitação enviada com sucesso!");
       setShowCreateModal(false);
       // reset form
       setTitulo("");
@@ -231,7 +238,7 @@ export default function MinhasSolicitacoes() {
       carregarSolicitacoes();
     } catch (err: unknown) {
       console.error("Erro ao criar solicitação:", err);
-      modal.error("Erro ao enviar solicitação");
+      toast.error("Erro ao enviar solicitação");
     }
   };
 
@@ -439,3 +446,4 @@ export default function MinhasSolicitacoes() {
     </div>
   );
 }
+

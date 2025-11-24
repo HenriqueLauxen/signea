@@ -2,13 +2,22 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Users, CheckCircle, Clock, MapPin, Loader2, Plus } from "lucide-react";
+import { Calendar, Users, CheckCircle, Clock, MapPin, Loader2, Plus, Pencil, XCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-// import { modal } from "@/contexts/ModalContext"; // Removed modal usage
 import { useToast } from "@/contexts/ToastContext";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Evento {
   id: string;
@@ -32,6 +41,9 @@ export default function MeusEventos() {
   const toast = useToast();
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [eventoToCancel, setEventoToCancel] = useState<string | null>(null);
+  const [canceling, setCanceling] = useState(false);
 
   const carregarEventos = async () => {
     try {
@@ -44,24 +56,24 @@ export default function MeusEventos() {
         return;
       }
 
-      // Buscar campus do usuário
+      // Buscar campus do usuário (através do relacionamento)
       const { data: userData } = await supabase
         .from('usuarios')
-        .select('campus')
+        .select('campus_id, campus:campus_id(nome)')
         .eq('email', session.user.email)
         .single();
 
-      const userCampus = userData?.campus;
+      const userCampusNome = (userData?.campus as any)?.nome;
 
-      // Buscar TODOS os eventos do campus, não apenas os do organizador
+      // Buscar TODOS os eventos do organizador ou do campus
       let query = supabase
         .from('eventos')
         .select('*')
         .order('created_at', { ascending: false });
 
-      // Se o usuário tem campus definido, filtrar por campus
-      if (userCampus) {
-        query = query.eq('campus', userCampus);
+      // Se o usuário tem campus definido, filtrar por campus (eventos.campus é string)
+      if (userCampusNome) {
+        query = query.eq('campus', userCampusNome);
       }
 
       const { data, error } = await query;
@@ -109,6 +121,8 @@ export default function MeusEventos() {
         return <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">Pendente</Badge>;
       case 'rejeitado':
         return <Badge className="bg-red-500/10 text-red-500 border-red-500/20">Rejeitado</Badge>;
+      case 'cancelado':
+        return <Badge className="bg-gray-500/10 text-gray-500 border-gray-500/20">Cancelado</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -118,6 +132,44 @@ export default function MeusEventos() {
     const ocupadas = evento.capacidade_maxima - evento.vagas_disponiveis;
     const percentual = Math.round((ocupadas / evento.capacidade_maxima) * 100);
     return { ocupadas, percentual };
+  };
+
+  const handleCancelarEvento = (eventoId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Impede navegação
+    setEventoToCancel(eventoId);
+    setCancelDialogOpen(true);
+  };
+
+  const confirmarCancelamento = async () => {
+    if (!eventoToCancel) return;
+
+    try {
+      setCanceling(true);
+
+      const { error } = await supabase
+        .from('eventos')
+        .update({ status: 'cancelado' })
+        .eq('id', eventoToCancel);
+
+      if (error) throw error;
+
+      toast.success('Evento cancelado com sucesso');
+      carregarEventos(); // Recarrega lista
+    } catch (error) {
+      console.error('Erro ao cancelar evento:', error);
+      toast.error('Erro ao cancelar evento');
+    } finally {
+      setCanceling(false);
+      setCancelDialogOpen(false);
+      setEventoToCancel(null);
+    }
+  };
+
+  const handleEditarEvento = (eventoId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Impede navegação
+    // TODO: Implementar página de edição
+    toast.info('Funcionalidade de edição em desenvolvimento');
+    // navigate(`/organizador/editar-evento/${eventoId}`);
   };
 
   if (loading) {
@@ -248,12 +300,58 @@ export default function MeusEventos() {
                       </Badge>
                     )}
                   </div>
+
+                  {/* Botões de Ação */}
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => handleEditarEvento(evento.id, e)}
+                      className="flex-1"
+                    >
+                      <Pencil className="w-4 h-4 mr-2" />
+                      Editar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => handleCancelarEvento(evento.id, e)}
+                      className="flex-1 text-red-500 hover:text-red-600 hover:border-red-500/50"
+                      disabled={evento.status === 'cancelado'}
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      {evento.status === 'cancelado' ? 'Cancelado' : 'Cancelar'}
+                    </Button>
+                  </div>
                 </div>
               </Card>
             );
           })}
         </div>
       )}
+
+      {/* Dialog de Confirmação de Cancelamento */}
+      <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancelar Evento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja cancelar este evento? Esta ação não pode ser desfeita.
+              Todos os participantes inscritos serão notificados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={canceling}>Voltar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmarCancelamento}
+              disabled={canceling}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {canceling ? 'Cancelando...' : 'Sim, cancelar evento'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,0 +1,653 @@
+================================================================================
+DOCUMENTAÇÃO DE FUNCIONALIDADES (GET/POST/UPDATE/DELETE) - SIGNEA
+================================================================================
+Data: 2024
+Sistema: SIGNEA - Sistema de Gestão de Eventos e Certificados
+================================================================================
+
+ÍNDICE:
+1. Visão Geral das Operações
+2. Operações por Tabela
+3. Exemplos de Queries Supabase
+4. Validações e Regras de Negócio
+5. Fluxos Principais
+
+================================================================================
+1. VISÃO GERAL DAS OPERAÇÕES
+================================================================================
+
+O sistema utiliza Supabase Client para todas as operações de banco de dados.
+As operações seguem o padrão REST:
+- GET (SELECT): .from('tabela').select('campos').where()
+- POST (INSERT): .from('tabela').insert([{dados}])
+- PUT/PATCH (UPDATE): .from('tabela').update({dados}).eq('campo', valor)
+- DELETE: .from('tabela').delete().eq('campo', valor)
+
+Todas as operações respeitam Row Level Security (RLS) configurado no banco.
+
+
+================================================================================
+2. OPERAÇÕES POR TABELA
+================================================================================
+
+2.1. USUARIOS
+-------------
+
+GET (SELECT):
+--------------
+Operações comuns:
+
+1. Buscar usuário por email (para login):
+   supabase.from('usuarios').select('*').eq('email', email).maybeSingle()
+
+2. Buscar usuário por matrícula:
+   supabase.from('usuarios').select('*').eq('matricula', matricula).maybeSingle()
+
+3. Buscar todos os usuários:
+   supabase.from('usuarios').select('*').order('nome_completo')
+
+4. Buscar usuários por perfil:
+   supabase.from('usuarios').select('*').eq('perfil', 'organizador')
+
+5. Buscar usuário com relacionamentos (campus, curso):
+   supabase.from('usuarios').select('*, campus:campus_id(*), cursos:curso_id(*)')
+     .eq('email', email).single()
+
+6. Buscar usuários por campus:
+   supabase.from('usuarios').select('*').eq('campus_id', campusId)
+
+
+POST (INSERT):
+---------------
+Operações comuns:
+
+1. Criar novo usuário (cadastro):
+   supabase.from('usuarios').insert([{
+     email: 'usuario@aluno.iffar.edu.br',
+     nome_completo: 'Nome Completo',
+     matricula: '12345',
+     senha_hash: 'hash_bcrypt',
+     perfil: 'user',
+     email_confirmado: true,
+     campus_id: 1,
+     curso_id: 1,
+     data_nascimento: '2000-01-01'
+   }])
+
+Campos obrigatórios: email, nome_completo
+Campos opcionais: todos os outros
+
+
+UPDATE:
+--------
+Operações comuns:
+
+1. Atualizar próprio perfil:
+   supabase.from('usuarios').update({
+     nome_completo: 'Novo Nome',
+     campus_id: 2,
+     curso_id: 2,
+     avatar_url: 'url_do_avatar'
+   }).eq('email', usuarioEmail)
+
+2. Atualizar senha:
+   supabase.from('usuarios').update({
+     senha_hash: 'novo_hash_bcrypt'
+   }).eq('email', usuarioEmail)
+
+3. Atualizar perfil (apenas admin):
+   supabase.from('usuarios').update({
+     perfil: 'organizador'
+   }).eq('email', usuarioEmail)
+
+
+DELETE:
+--------
+Operações:
+
+1. Deletar usuário (cuidado - cascade em eventos/inscricoes):
+   supabase.from('usuarios').delete().eq('email', usuarioEmail)
+
+NOTA: DELETE em usuarios causa CASCADE em eventos e inscricoes relacionados.
+
+
+2.2. EVENTOS
+------------
+
+GET (SELECT):
+--------------
+Operações comuns:
+
+1. Buscar todos os eventos:
+   supabase.from('eventos').select('*').order('data_inicio', { ascending: false })
+
+2. Buscar eventos aprovados:
+   supabase.from('eventos').select('*').eq('status', 'aprovado')
+     .order('data_inicio', { ascending: false })
+
+3. Buscar eventos por organizador:
+   supabase.from('eventos').select('*').eq('organizador_email', email)
+
+4. Buscar evento por ID:
+   supabase.from('eventos').select('*').eq('id', eventoId).single()
+
+5. Buscar eventos pendentes de aprovação:
+   supabase.from('eventos').select('*').eq('status', 'pendente')
+
+6. Buscar eventos por campus:
+   supabase.from('eventos').select('*').eq('campus', nomeCampus)
+
+7. Buscar eventos com palestrantes e cursos relacionados:
+   supabase.from('eventos').select(`
+     *,
+     palestrantes:palestrantes(*),
+     eventos_cursos:eventos_cursos(curso_id, cursos:cursos(*))
+   `).eq('id', eventoId).single()
+
+8. Buscar eventos por status e data:
+   supabase.from('eventos').select('*')
+     .eq('status', 'aprovado')
+     .gte('data_inicio', dataInicio)
+     .lte('data_fim', dataFim)
+
+
+POST (INSERT):
+---------------
+Operações comuns:
+
+1. Criar novo evento:
+   supabase.from('eventos').insert([{
+     titulo: 'Título do Evento',
+     descricao: 'Descrição',
+     tipo: 'palestra',
+     data_inicio: '2024-12-01T10:00:00Z',
+     data_fim: '2024-12-01T12:00:00Z',
+     local: 'Local do Evento',
+     latitude: -29.5,
+     longitude: -52.0,
+     raio_validacao_metros: 100,
+     campus: 'Campus Nome',
+     capacidade_maxima: 100,
+     vagas_disponiveis: 100,
+     organizador_email: 'organizador@iffar.edu.br',
+     organizador_nome: 'Nome Organizador',
+     carga_horaria: 2,
+     valor: 0,
+     status: 'pendente', // ou 'aprovado' se for organizador
+     gera_certificado: true
+   }]).select().single()
+
+Campos obrigatórios: titulo, data_inicio, data_fim, local, capacidade_maxima,
+                    organizador_email
+Campos calculados automaticamente: codigo_qrcode (se NULL)
+Campos com trigger: vagas_disponiveis (inicialmente = capacidade_maxima)
+
+
+UPDATE:
+--------
+Operações comuns:
+
+1. Atualizar evento:
+   supabase.from('eventos').update({
+     titulo: 'Novo Título',
+     descricao: 'Nova Descrição',
+     status: 'aprovado',
+     aprovador_email: 'admin@iffar.edu.br',
+     data_aprovacao: new Date().toISOString()
+   }).eq('id', eventoId)
+
+2. Atualizar status do evento:
+   supabase.from('eventos').update({
+     status: 'cancelado'
+   }).eq('id', eventoId)
+
+3. Atualizar vagas disponíveis (geralmente feito por trigger):
+   supabase.from('eventos').update({
+     vagas_disponiveis: novaQuantidade
+   }).eq('id', eventoId)
+
+
+DELETE:
+--------
+Operações:
+
+1. Cancelar/deletar evento:
+   supabase.from('eventos').delete().eq('id', eventoId)
+
+NOTA: DELETE em eventos causa CASCADE em inscricoes, presencas, certificados.
+
+
+2.3. INSCRICOES
+---------------
+
+GET (SELECT):
+--------------
+Operações comuns:
+
+1. Buscar todas as inscrições de um evento:
+   supabase.from('inscricoes').select(`
+     *,
+     usuarios:usuario_email(*),
+     eventos:evento_id(*)
+   `).eq('evento_id', eventoId)
+
+2. Buscar inscrições de um usuário:
+   supabase.from('inscricoes').select(`
+     *,
+     eventos:evento_id(*)
+   `).eq('usuario_email', usuarioEmail)
+
+3. Buscar inscrição específica:
+   supabase.from('inscricoes').select('*')
+     .eq('evento_id', eventoId)
+     .eq('usuario_email', usuarioEmail)
+     .maybeSingle()
+
+4. Buscar inscrições por status:
+   supabase.from('inscricoes').select('*').eq('status', 'confirmada')
+
+5. Buscar inscrições pendentes de pagamento:
+   supabase.from('inscricoes').select('*')
+     .eq('pagamento_status', 'pendente')
+
+
+POST (INSERT):
+---------------
+Operações comuns:
+
+1. Criar inscrição:
+   supabase.from('inscricoes').insert([{
+     evento_id: eventoId,
+     usuario_email: usuarioEmail,
+     status: 'pendente', // ou 'confirmada' se evento gratuito
+     pagamento_status: eventoPago ? 'pendente' : null
+   }]).select().single()
+
+Campos obrigatórios: evento_id, usuario_email
+Constraint: UNIQUE(evento_id, usuario_email) - não pode duplicar inscrição
+
+NOTA: Trigger update_vagas_disponiveis atualiza vagas_disponiveis automaticamente.
+
+
+UPDATE:
+--------
+Operações comuns:
+
+1. Confirmar inscrição:
+   supabase.from('inscricoes').update({
+     status: 'confirmada'
+   }).eq('id', inscricaoId)
+
+2. Confirmar pagamento:
+   supabase.from('inscricoes').update({
+     pagamento_status: 'pago',
+     status: 'confirmada'
+   }).eq('id', inscricaoId)
+
+3. Cancelar inscrição:
+   supabase.from('inscricoes').update({
+     status: 'cancelada'
+   }).eq('id', inscricaoId)
+
+NOTA: Trigger update_vagas_disponiveis atualiza vagas quando status muda.
+
+
+DELETE:
+--------
+Operações:
+
+1. Cancelar/deletar inscrição:
+   supabase.from('inscricoes').delete().eq('id', inscricaoId)
+
+NOTA: DELETE em inscricoes libera vaga no evento (via trigger).
+
+
+2.4. PRESENCAS
+--------------
+
+GET (SELECT):
+--------------
+Operações comuns:
+
+1. Buscar presenças de um evento:
+   supabase.from('presencas').select(`
+     *,
+     usuarios:usuario_email(*),
+     eventos:evento_id(*)
+   `).eq('evento_id', eventoId).order('data_presenca')
+
+2. Buscar presenças de um usuário:
+   supabase.from('presencas').select(`
+     *,
+     eventos:evento_id(*)
+   `).eq('usuario_email', usuarioEmail)
+
+3. Buscar presença por evento e usuário:
+   supabase.from('presencas').select('*')
+     .eq('evento_id', eventoId)
+     .eq('usuario_email', usuarioEmail)
+
+4. Buscar presenças por dia do evento:
+   supabase.from('presencas').select('*')
+     .eq('evento_id', eventoId)
+     .eq('dia_evento', dia)
+
+5. Contar presenças de um usuário em um evento:
+   supabase.from('presencas').select('*', { count: 'exact', head: true })
+     .eq('evento_id', eventoId)
+     .eq('usuario_email', usuarioEmail)
+
+
+POST (INSERT):
+---------------
+Operações comuns:
+
+1. Registrar presença:
+   supabase.from('presencas').insert([{
+     evento_id: eventoId,
+     usuario_email: usuarioEmail,
+     inscricao_id: inscricaoId,
+     data_presenca: new Date().toISOString(),
+     latitude_capturada: latitude,
+     longitude_capturada: longitude,
+     distancia_validada: true,
+     palavra_chave_usada: 'PALAVRA_CHAVE'
+   }]).select().single()
+
+Campos obrigatórios: evento_id, usuario_email, data_presenca
+Campos calculados automaticamente:
+  - usuario_nome (via trigger presencas_set_usuario_nome)
+  - dia_evento (via trigger presencas_set_dia_evento)
+
+Constraint: UNIQUE(evento_id, usuario_email, dia_evento) - uma presença por dia
+
+
+UPDATE:
+--------
+Operações comuns:
+
+1. Validar presença manualmente (organizador):
+   supabase.from('presencas').update({
+     validado_por: 'organizador@iffar.edu.br',
+     distancia_validada: true
+   }).eq('id', presencaId)
+
+
+DELETE:
+--------
+Operações:
+
+1. Remover presença:
+   supabase.from('presencas').delete().eq('id', presencaId)
+
+NOTA: Apenas organizador/admin pode deletar presenças.
+
+
+2.5. CERTIFICADOS
+-----------------
+
+GET (SELECT):
+--------------
+Operações comuns:
+
+1. Buscar certificados de um usuário:
+   supabase.from('certificados').select(`
+     *,
+     eventos:evento_id(*)
+   `).eq('usuario_email', usuarioEmail).order('data_emissao', { ascending: false })
+
+2. Buscar certificados de um evento:
+   supabase.from('certificados').select(`
+     *,
+     usuarios:usuario_email(*)
+   `).eq('evento_id', eventoId)
+
+3. Buscar certificado por código de validação:
+   supabase.from('certificados').select('*')
+     .eq('codigo_validacao', codigo).single()
+
+4. Buscar certificado por hash SHA256:
+   supabase.from('certificados').select('*')
+     .eq('hash_sha256', hash).single()
+
+5. Buscar certificado por evento e usuário:
+   supabase.from('certificados').select('*')
+     .eq('evento_id', eventoId)
+     .eq('usuario_email', usuarioEmail)
+     .maybeSingle()
+
+
+POST (INSERT):
+---------------
+Operações comuns:
+
+1. Criar certificado:
+   supabase.from('certificados').insert([{
+     evento_id: eventoId,
+     usuario_email: usuarioEmail,
+     usuario_nome: 'Nome Completo',
+     codigo_validacao: 'CODIGO_UNICO',
+     hash_sha256: 'hash_sha256_do_pdf',
+     url_pdf: 'url_do_pdf_no_storage',
+     data_emissao: new Date().toISOString()
+   }]).select().single()
+
+Campos obrigatórios: evento_id, usuario_email, usuario_nome, codigo_validacao
+Constraint: UNIQUE(evento_id, usuario_email) - um certificado por evento
+
+
+UPDATE:
+--------
+Operações comuns:
+
+1. Atualizar URL do PDF:
+   supabase.from('certificados').update({
+     url_pdf: 'nova_url_do_pdf',
+     hash_sha256: 'novo_hash'
+   }).eq('id', certificadoId)
+
+
+DELETE:
+--------
+Operações:
+
+1. Deletar certificado (apenas organizador/admin):
+   supabase.from('certificados').delete().eq('id', certificadoId)
+
+
+2.6. PALESTRANTES
+-----------------
+
+GET (SELECT):
+--------------
+Operações comuns:
+
+1. Buscar palestrantes de um evento:
+   supabase.from('palestrantes').select('*')
+     .eq('evento_id', eventoId)
+     .order('ordem')
+
+
+POST (INSERT):
+---------------
+Operações comuns:
+
+1. Adicionar palestrante:
+   supabase.from('palestrantes').insert([{
+     evento_id: eventoId,
+     nome: 'Nome Palestrante',
+     tema: 'Tema da Palestra',
+     descricao: 'Descrição',
+     ordem: 1
+   }])
+
+
+UPDATE:
+--------
+Operações comuns:
+
+1. Atualizar palestrante:
+   supabase.from('palestrantes').update({
+     nome: 'Novo Nome',
+     tema: 'Novo Tema'
+   }).eq('id', palestranteId)
+
+
+DELETE:
+--------
+Operações:
+
+1. Remover palestrante:
+   supabase.from('palestrantes').delete().eq('id', palestranteId)
+
+
+2.7. CAMPUS / CURSOS / COORDENADORES
+------------------------------------
+
+GET (SELECT):
+--------------
+Operações comuns:
+
+1. Buscar todos os campus ativos:
+   supabase.from('campus').select('*').eq('ativo', true).order('nome')
+
+2. Buscar todos os cursos ativos:
+   supabase.from('cursos').select('*').eq('ativo', true).order('nome')
+
+3. Buscar todos os coordenadores ativos:
+   supabase.from('coordenadores').select('*').eq('ativo', true).order('nome')
+
+
+POST (INSERT):
+---------------
+Operações comuns:
+
+1. Criar campus:
+   supabase.from('campus').insert([{
+     nome: 'Nome do Campus',
+     ativo: true
+   }])
+
+
+UPDATE:
+--------
+Operações comuns:
+
+1. Atualizar/desativar campus:
+   supabase.from('campus').update({
+     ativo: false
+   }).eq('id', campusId)
+
+
+================================================================================
+3. VALIDAÇÕES E REGRAS DE NEGÓCIO
+================================================================================
+
+3.1. Validações de Inscrição:
+------------------------------
+- Um usuário não pode se inscrever duas vezes no mesmo evento (UNIQUE constraint)
+- Eventos pagos requerem pagamento_status = 'pago' para status = 'confirmada'
+- Eventos gratuitos: inscrição direta com status = 'confirmada'
+- Não pode se inscrever em evento com vagas_disponiveis = 0
+- Não pode se inscrever após data_encerramento_inscricoes
+
+3.2. Validações de Presença:
+-----------------------------
+- Uma presença por dia por usuário (UNIQUE constraint)
+- Usuário deve estar inscrito no evento (inscricao_id)
+- Validação geográfica: latitude/longitude dentro do raio_validacao_metros
+- Palavra-chave deve corresponder ao dia do evento
+- dia_evento é calculado automaticamente: (data_presenca - eventos.data_inicio) + 1
+
+3.3. Validações de Eventos:
+----------------------------
+- data_fim >= data_inicio (constraint)
+- vagas_disponiveis >= 0 E <= capacidade_maxima (constraint)
+- data_encerramento_inscricoes <= data_inicio (constraint)
+- Organizador cria evento com status 'pendente' (exceto se for organizador - então 'aprovado')
+- Apenas admin/organizador pode aprovar eventos
+
+3.4. Validações de Pagamento:
+------------------------------
+- pagamento_status só pode ser NOT NULL se eventos.valor > 0 (trigger)
+- Status 'confirmada' requer pagamento_status = 'pago' (se evento pago)
+
+3.5. Validações de Certificado:
+--------------------------------
+- Um certificado por evento por usuário (UNIQUE constraint)
+- Certificado só pode ser criado por organizador/admin do evento
+- Usuário deve ter presença mínima no evento para receber certificado
+
+
+================================================================================
+4. FLUXOS PRINCIPAIS
+================================================================================
+
+4.1. Fluxo de Cadastro e Login:
+--------------------------------
+1. POST usuarios (cadastro) -> cria usuário com email_confirmado = true
+2. Login valida senha_hash na tabela usuarios
+3. Cria sessão no Supabase Auth (se não existir)
+
+4.2. Fluxo de Criação de Evento:
+---------------------------------
+1. POST eventos (status = 'pendente' ou 'aprovado' se organizador)
+2. Se aprovado: evento fica visível para usuários
+3. Trigger gera codigo_qrcode automaticamente
+
+4.3. Fluxo de Inscrição:
+-------------------------
+1. GET eventos (buscar evento aprovado)
+2. POST inscricoes (status = 'pendente' se pago, 'confirmada' se gratuito)
+3. Se pago: aguarda pagamento_status = 'pago'
+4. Trigger atualiza vagas_disponiveis automaticamente
+
+4.4. Fluxo de Presença:
+------------------------
+1. GET evento_palavras_chave (buscar palavra do dia)
+2. Validar localização (latitude/longitude dentro do raio)
+3. POST presencas (com palavra-chave correta)
+4. Triggers preenchem usuario_nome e dia_evento automaticamente
+
+4.5. Fluxo de Certificado:
+---------------------------
+1. Calcular presença percentual do usuário no evento
+2. POST certificados (apenas se presença >= mínimo)
+3. Gerar PDF e fazer upload para storage
+4. UPDATE certificados com url_pdf e hash_sha256
+
+
+================================================================================
+5. EXEMPLOS DE QUERIES COMPLEXAS
+================================================================================
+
+5.1. Buscar eventos com relacionamentos completos:
+---------------------------------------------------
+supabase.from('eventos').select(`
+  *,
+  organizador:organizador_email(nome_completo, email),
+  palestrantes:palestrantes(*),
+  eventos_cursos:eventos_cursos(cursos:cursos(*))
+`).eq('status', 'aprovado')
+
+5.2. Buscar inscrições com dados do usuário e evento:
+-------------------------------------------------------
+supabase.from('inscricoes').select(`
+  *,
+  usuarios:usuario_email(nome_completo, matricula, campus:campus_id(nome)),
+  eventos:evento_id(titulo, data_inicio, data_fim, local)
+`).eq('evento_id', eventoId)
+
+5.3. Calcular presença percentual:
+------------------------------------
+// No frontend:
+const totalDias = calcularTotalDias(evento.data_inicio, evento.data_fim);
+const presencas = await supabase.from('presencas')
+  .select('*').eq('evento_id', eventoId).eq('usuario_email', usuarioEmail);
+const percentual = (presencas.length / totalDias) * 100;
+
+
+================================================================================
+FIM DA DOCUMENTAÇÃO
+================================================================================
+

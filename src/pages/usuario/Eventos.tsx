@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,8 @@ import { useToast } from "@/contexts/ToastContext";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import QRCode from "qrcode";
+import { getPagamentoStatus } from "@/lib/api/pagamento";
 
 interface Evento {
   id: string;
@@ -47,6 +49,12 @@ export default function Eventos() {
 
   const [presencasUsuario, setPresencasUsuario] = useState<any[]>([]);
   const [loadingPresencas, setLoadingPresencas] = useState(false);
+  
+  // Estados para pagamento
+  const [inscricaoPendenteId, setInscricaoPendenteId] = useState<string | null>(null);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [aguardandoPagamento, setAguardandoPagamento] = useState(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const carregarEventos = useCallback(async () => {
     if (!userEmail) {
@@ -88,11 +96,13 @@ export default function Eventos() {
           vagas_disponiveis, 
           valor, 
           publico_alvo_perfil,
+          status,
           coordenador_id(nome, descricao),
           eventos_cursos(curso_id),
           palestrantes(nome, tema, descricao)
         `)
-        .eq('status', 'aprovado');
+        .eq('status', 'aprovado')
+        .neq('status', 'cancelado');
 
       // Se o usuário é aluno, mostrar apenas eventos para alunos
       if (userPerfil === 'user') {
@@ -102,6 +112,12 @@ export default function Eventos() {
       // Nenhuma cláusula adicional necessária para organizador, pois ele vê tudo por padrão
 
       const { data, error } = await query.order('data_inicio', { ascending: true });
+
+      // Debug: log dos eventos encontrados
+      console.log('🔍 Eventos encontrados:', data?.length || 0);
+      if (data && data.length > 0) {
+        console.log('📋 Status dos eventos:', data.map(e => ({ titulo: e.titulo, status: e.status })));
+      }
 
       if (error) {
         console.error('❌ Erro ao buscar eventos:', error);
@@ -242,6 +258,21 @@ export default function Eventos() {
     setShowModal(true);
   };
 
+  const handleCloseModal = () => {
+    // Limpar polling se existir
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    
+    // Limpar estados de pagamento
+    setAguardandoPagamento(false);
+    setInscricaoPendenteId(null);
+    setQrCodeUrl(null);
+    
+    setShowModal(false);
+  };
+
   const confirmarInscricao = async () => {
     if (!eventoSelecionado || !userEmail) return;
 
@@ -260,20 +291,47 @@ export default function Eventos() {
     try {
       setInscrevendo(true);
 
-      const { error } = await supabase
+      // Verificar se o evento é pago
+      const eventoPago = eventoSelecionado.valor && eventoSelecionado.valor > 0;
+
+      const { data: inscricaoData, error } = await supabase
         .from('inscricoes')
         .insert({
           evento_id: eventoSelecionado.id,
           usuario_email: userEmail,
-          status: 'confirmada'
-        });
+          status: eventoPago ? 'pendente' : 'confirmada',
+          pagamento_status: eventoPago ? 'pendente' : null
+        })
+        .select()
+        .single();
 
       if (error) throw error;
 
-      toast.success("Inscrição realizada com sucesso!");
-      setShowModal(false);
-      setEventoSelecionado(null);
-      carregarEventos(); // Recarregar para atualizar o status
+      // Se for evento pago, mostrar QRCode e iniciar polling
+      if (eventoPago && inscricaoData) {
+        const inscricaoId = inscricaoData.id;
+        setInscricaoPendenteId(inscricaoId);
+        setAguardandoPagamento(true);
+        
+        // Gerar QRCode
+        const url = `${window.location.origin}/pagar-simulacao?id=${inscricaoId}`;
+        try {
+          const qrCodeDataUrl = await QRCode.toDataURL(url, { width: 300 });
+          setQrCodeUrl(qrCodeDataUrl);
+        } catch (qrError) {
+          console.error('Erro ao gerar QRCode:', qrError);
+          toast.error('Erro ao gerar QRCode');
+        }
+
+        // Iniciar polling
+        iniciarPollingPagamento(inscricaoId);
+      } else {
+        // Evento gratuito - finalizar normalmente
+        toast.success("Inscrição realizada com sucesso!");
+        setShowModal(false);
+        setEventoSelecionado(null);
+        carregarEventos();
+      }
     } catch (error: any) {
       console.error('Erro ao realizar inscrição:', error);
       if (error.code === '23505') {
@@ -285,6 +343,49 @@ export default function Eventos() {
       setInscrevendo(false);
     }
   };
+
+  const iniciarPollingPagamento = (inscricaoId: string) => {
+    // Limpar polling anterior se existir
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+
+    // Iniciar polling a cada 2 segundos
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const { status } = await getPagamentoStatus(inscricaoId);
+        
+        if (status === 'pago') {
+          // Pagamento confirmado!
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          
+          setAguardandoPagamento(false);
+          setInscricaoPendenteId(null);
+          setQrCodeUrl(null);
+          
+          toast.success("Pagamento confirmado! Inscrição realizada com sucesso!");
+          setShowModal(false);
+          setEventoSelecionado(null);
+          carregarEventos();
+        }
+      } catch (error) {
+        console.error('Erro ao verificar status do pagamento:', error);
+      }
+    }, 2000); // 2 segundos
+  };
+
+  // Limpar polling quando o modal fechar
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   const inscricoesEncerradas = (evento: Evento): boolean => {
     if (!evento.data_encerramento_inscricoes) return false;
@@ -673,7 +774,11 @@ export default function Eventos() {
       </Tabs>
 
       {/* Modal de Inscrição / Detalhes */}
-      <Dialog open={showModal} onOpenChange={setShowModal}>
+      <Dialog open={showModal} onOpenChange={(open) => {
+        if (!open) {
+          handleCloseModal();
+        }
+      }}>
         <DialogContent className="max-w-lg w-[90vw] max-h-[90vh] overflow-y-auto scrollbar-hide">
           <DialogHeader>
             <DialogTitle>
@@ -843,6 +948,52 @@ export default function Eventos() {
                       Cancelar Inscrição
                     </Button>
                   )}
+                </div>
+              ) : aguardandoPagamento ? (
+                // Modal aguardando pagamento
+                <div className="space-y-4 pt-4">
+                  <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                    <p className="text-sm text-blue-900 dark:text-blue-100 text-center">
+                      <strong>Pagamento simulado para testes</strong>
+                      <br />
+                      (não usa banco real)
+                    </p>
+                  </div>
+
+                  {qrCodeUrl && (
+                    <div className="flex flex-col items-center space-y-3">
+                      <div className="bg-white p-4 rounded-lg border-2 border-border">
+                        <img src={qrCodeUrl} alt="QR Code para pagamento" className="w-64 h-64" />
+                      </div>
+                      <p className="text-sm text-muted-foreground text-center">
+                        Escaneie o QR Code ou abra a URL para simular o pagamento
+                      </p>
+                      <p className="text-xs text-muted-foreground text-center font-mono break-all px-4">
+                        {`${window.location.origin}/pagar-simulacao?id=${inscricaoPendenteId}`}
+                      </p>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Aguardando confirmação do pagamento...
+                      </div>
+                    </div>
+                  )}
+
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (pollingIntervalRef.current) {
+                        clearInterval(pollingIntervalRef.current);
+                        pollingIntervalRef.current = null;
+                      }
+                      setAguardandoPagamento(false);
+                      setInscricaoPendenteId(null);
+                      setQrCodeUrl(null);
+                      setShowModal(false);
+                    }}
+                    className="w-full"
+                  >
+                    Cancelar
+                  </Button>
                 </div>
               ) : (
                 <div className="flex flex-col sm:flex-row gap-2 pt-2">

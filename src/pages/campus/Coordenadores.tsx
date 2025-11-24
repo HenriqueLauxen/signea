@@ -10,10 +10,19 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, Edit, Trash2, CheckCircle, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { modal } from "@/contexts/ModalContext";
 import { useToast } from "@/contexts/ToastContext";
 
 interface Coordenador {
@@ -30,6 +39,9 @@ export default function Coordenadores() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({ nome: "", descricao: "" });
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [coordenadorToDelete, setCoordenadorToDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const toast = useToast();
 
   const fetchCoordenadores = useCallback(async () => {
@@ -127,19 +139,23 @@ export default function Coordenadores() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    const confirm = await modal.confirm(
-      "Tem certeza que deseja excluir este coordenador? Esta ação não pode ser desfeita."
-    );
+  const handleDeleteClick = (id: string) => {
+    setCoordenadorToDelete(id);
+    setDeleteDialogOpen(true);
+  };
 
-    if (!confirm) return;
+  const handleDeleteConfirm = async () => {
+    if (!coordenadorToDelete) return;
 
     try {
-      const { error } = await supabase.from("coordenadores").delete().eq("id", id);
+      setDeleting(true);
+      const { error } = await supabase.from("coordenadores").delete().eq("id", coordenadorToDelete);
 
       if (error) throw error;
       toast.success("Coordenador excluído com sucesso");
       fetchCoordenadores();
+      setDeleteDialogOpen(false);
+      setCoordenadorToDelete(null);
     } catch (error: any) {
       console.error("Erro ao excluir coordenador:", error);
       if (error.code === "23503") {
@@ -147,6 +163,8 @@ export default function Coordenadores() {
       } else {
         toast.error("Erro ao excluir coordenador");
       }
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -223,7 +241,7 @@ export default function Coordenadores() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => handleDelete(coordenador.id)}
+                    onClick={() => handleDeleteClick(coordenador.id)}
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>
@@ -269,7 +287,37 @@ export default function Coordenadores() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog de Confirmação de Exclusão */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Coordenador</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir este coordenador? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Excluindo...
+                </>
+              ) : (
+                "Excluir"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+
 

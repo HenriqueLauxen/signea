@@ -9,7 +9,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, Save, Pen, Calendar as CalendarIcon, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { modal } from "@/contexts/ModalContext";
 import { useToast } from "@/contexts/ToastContext";
 import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -137,12 +136,12 @@ export default function CriarEvento() {
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      modal.error("Por favor, selecione uma imagem");
+      toast.error("Por favor, selecione uma imagem");
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      modal.error("A imagem deve ter no máximo 5MB");
+      toast.error("A imagem deve ter no máximo 5MB");
       return;
     }
 
@@ -158,22 +157,22 @@ export default function CriarEvento() {
 
   const handleAdicionarPalestrante = () => {
     if (!palestranteNome.trim()) {
-      modal.error("Digite o nome do palestrante");
+      toast.error("Digite o nome do palestrante");
       return;
     }
 
     if (!palestranteTema.trim()) {
-      modal.error("Digite o tema da palestra");
+      toast.error("Digite o tema da palestra");
       return;
     }
 
     if (!palestranteDescricao.trim()) {
-      modal.error("Digite a descrição do que será apresentado");
+      toast.error("Digite a descrição do que será apresentado");
       return;
     }
     
     if (palestrantes.some(p => p.nome === palestranteNome)) {
-      modal.error("Este palestrante já foi adicionado");
+      toast.error("Este palestrante já foi adicionado");
       return;
     }
 
@@ -239,13 +238,13 @@ export default function CriarEvento() {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       
       if (errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
-        modal.error("❌ Bucket 'eventos' não encontrado. Crie o bucket no Supabase Storage.");
+        toast.error("❌ Bucket 'eventos' não encontrado. Crie o bucket no Supabase Storage.");
       } else if (errorMessage.includes('permission') || errorMessage.includes('policy')) {
-        modal.error("❌ Sem permissão para upload. Configure as políticas do bucket.");
+        toast.error("❌ Sem permissão para upload. Configure as políticas do bucket.");
       } else if (errorMessage.includes('size')) {
-        modal.error("❌ Arquivo muito grande. Máximo: 5MB");
+        toast.error("❌ Arquivo muito grande. Máximo: 5MB");
       } else {
-        modal.error(`❌ Erro ao fazer upload: ${errorMessage}`);
+        toast.error(`❌ Erro ao fazer upload: ${errorMessage}`);
       }
       
       return null;
@@ -257,33 +256,33 @@ export default function CriarEvento() {
   const handleCriarEvento = async () => {
     // Validações
     if (titulo === "Nome do Evento" || !titulo.trim()) {
-      modal.error("Por favor, defina um título para o evento");
+      toast.error("Por favor, defina um título para o evento");
       setEditandoTitulo(true);
       return;
     }
 
     if (!descricao.trim()) {
-      modal.error("Por favor, adicione uma descrição");
+      toast.error("Por favor, adicione uma descrição");
       return;
     }
 
     if (!tipo) {
-      modal.error("Por favor, selecione o tipo de evento");
+      toast.error("Por favor, selecione o tipo de evento");
       return;
     }
 
     if (!dateRange?.from || !dateRange?.to) {
-      modal.error("Por favor, selecione o período do evento");
+      toast.error("Por favor, selecione o período do evento");
       return;
     }
 
     if (!local.trim() || !latitude || !longitude) {
-      modal.error("Por favor, selecione o local do evento no mapa");
+      toast.error("Por favor, selecione o local do evento no mapa");
       return;
     }
 
     if (!capacidadeMaxima || capacidadeMaxima <= 0) {
-      modal.error("Por favor, informe a capacidade máxima (maior que 0)");
+      toast.error("Por favor, informe a capacidade máxima (maior que 0)");
       return;
     }
 
@@ -292,7 +291,7 @@ export default function CriarEvento() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user?.email) {
-        modal.error("Você precisa estar logado");
+        toast.error("Você precisa estar logado");
         navigate("/login");
         return;
       }
@@ -329,10 +328,10 @@ export default function CriarEvento() {
       // Upload do banner se houver
       let bannerUrlFinal = null;
       if (bannerFile) {
-        modal.info("Fazendo upload do banner...");
+        toast.info("Fazendo upload do banner...");
         bannerUrlFinal = await uploadBanner();
         if (!bannerUrlFinal) {
-          modal.warning("Evento será criado sem banner");
+          toast.warning("Evento será criado sem banner");
         }
       }
 
@@ -340,6 +339,13 @@ export default function CriarEvento() {
       const statusEvento = isOrganizador ? 'aprovado' : 'pendente';
       const aprovadorEmail = isOrganizador ? null : undefined;
       const dataAprovacao = isOrganizador ? new Date().toISOString() : undefined;
+
+      // Debug: verificar status do evento
+      console.log('🔍 Criando evento:', {
+        isOrganizador,
+        perfil: userData?.perfil,
+        statusEvento
+      });
 
       // Criar evento
       const { data: evento, error } = await supabase
@@ -377,9 +383,16 @@ export default function CriarEvento() {
         .single();
 
       if (error) {
-        console.error('Erro do Supabase:', error);
+        console.error('❌ Erro do Supabase:', error);
         throw new Error(error.message);
       }
+
+      // Debug: verificar se evento foi criado com status correto
+      console.log('✅ Evento criado:', {
+        id: evento?.id,
+        titulo: evento?.titulo,
+        status: evento?.status
+      });
 
       // Salvar palestrantes na tabela relacionada
       if (palestrantes.length > 0 && evento) {
@@ -397,7 +410,7 @@ export default function CriarEvento() {
 
         if (palestrantesError) {
           console.error('Erro ao salvar palestrantes:', palestrantesError);
-          modal.warning("Evento criado, mas houve erro ao salvar alguns palestrantes");
+          toast.warning("Evento criado, mas houve erro ao salvar alguns palestrantes");
         }
       }
 
@@ -414,11 +427,11 @@ export default function CriarEvento() {
 
         if (cursosError) {
           console.error('Erro ao salvar cursos:', cursosError);
-          modal.warning("Evento criado, mas houve erro ao salvar alguns cursos");
+          toast.warning("Evento criado, mas houve erro ao salvar alguns cursos");
         }
       }
 
-      modal.success("🎉 Evento criado com sucesso! Aguardando aprovação.");
+      toast.success("🎉 Evento criado com sucesso! Aguardando aprovação.");
       
       // Pequeno delay para mostrar a mensagem antes de redirecionar
       setTimeout(() => {
@@ -431,11 +444,11 @@ export default function CriarEvento() {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       
       if (errorMessage.includes('permission denied')) {
-        modal.error("❌ Erro de permissão. Verifique as políticas de RLS no Supabase.");
+        toast.error("❌ Erro de permissão. Verifique as políticas de RLS no Supabase.");
       } else if (errorMessage.includes('relation "eventos" does not exist')) {
-        modal.error("❌ Tabela 'eventos' não encontrada. Execute o script SQL do banco de dados.");
+        toast.error("❌ Tabela 'eventos' não encontrada. Execute o script SQL do banco de dados.");
       } else {
-        modal.error(`❌ Erro ao criar evento: ${errorMessage}`);
+        toast.error(`❌ Erro ao criar evento: ${errorMessage}`);
       }
     } finally {
       setLoading(false);
@@ -923,3 +936,4 @@ export default function CriarEvento() {
     </div>
   );
 }
+

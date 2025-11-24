@@ -20,10 +20,11 @@ const Login = () => {
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const [step, setStep] = useState<"email" | "code">("email");
+  const [step, setStep] = useState<"email" | "code" | "password">("email");
   const [emailOrMatricula, setEmailOrMatricula] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState(["", "", "", "", "", ""]);
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showAccountNotFound, setShowAccountNotFound] = useState(false);
   const [accountNotFoundType, setAccountNotFoundType] = useState<"email" | "matricula">("email");
@@ -33,28 +34,41 @@ const Login = () => {
   // Pega a rota que o usuário tentou acessar antes de ser redirecionado
   const from = (location.state as { from?: string })?.from || "/usuario/eventos";
 
-  // Verifica se já está logado ao carregar a página
-  useEffect(() => {
-    const checkIfLoggedIn = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session) {
-        // Usuário já está logado, redireciona
-        navigate(from, { replace: true });
+  // Lê sessão INSTANTANEAMENTE via localStorage (síncrono)
+  const [session] = useState(() => {
+    try {
+      const supabaseSession = localStorage.getItem('supabase.auth.token');
+      if (supabaseSession) {
+        const parsed = JSON.parse(supabaseSession);
+        const sess = parsed?.currentSession;
+        if (sess?.access_token) {
+          const expiresAt = sess.expires_at;
+          if (expiresAt && expiresAt * 1000 > Date.now()) {
+            return sess;
+          }
+        }
       }
-    };
+      return null;
+    } catch {
+      return null;
+    }
+  });
 
-    checkIfLoggedIn();
+  // Verifica se já está logado e redireciona APENAS se tiver sessão válida
+  useEffect(() => {
+    if (session) {
+      navigate(from, { replace: true });
+    }
 
     // Escuta mudanças no estado de autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      if (newSession) {
         navigate(from, { replace: true });
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate, from]);
+  }, [session, navigate, from]);
 
   const handleSendCode = async () => {
     if (!emailOrMatricula) {
@@ -311,6 +325,42 @@ const Login = () => {
     verifyCodeDirectly(code.join(""));
   };
 
+  const handlePasswordLogin = async () => {
+    if (!password) {
+      setErrorMessage("Por favor, insira sua senha");
+      setShowError(true);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Login com senha via Supabase Auth
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+      });
+
+      if (error) {
+        if (error.message.includes("Invalid login credentials")) {
+          setErrorMessage("Email ou senha incorretos. Verifique e tente novamente.");
+        } else {
+          setErrorMessage("Erro ao fazer login: " + error.message);
+        }
+        setShowError(true);
+      } else {
+        toast.success("Login realizado com sucesso!");
+        navigate(from, { replace: true });
+      }
+    } catch (err) {
+      console.error("Erro no login com senha:", err);
+      setErrorMessage("Erro ao fazer login. Tente novamente.");
+      setShowError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative">
       <div className="absolute top-4 right-4">
@@ -335,7 +385,9 @@ const Login = () => {
             <p className="text-sm text-muted-foreground">
               {step === "email"
                 ? "Entre com suas credenciais"
-                : "Digite o código enviado"}
+                : step === "code"
+                  ? "Digite o código enviado"
+                  : "Digite sua senha"}
             </p>
           </div>
 
@@ -378,7 +430,7 @@ const Login = () => {
                 Voltar
               </button>
             </div>
-          ) : (
+          ) : step === "code" ? (
             <div className="space-y-6">
               <div className="flex justify-center gap-2">
                 {code.map((digit, index) => (
@@ -405,13 +457,64 @@ const Login = () => {
                 {loading ? "Verificando..." : "Confirmar código"}
               </Button>
 
-              <button
-                onClick={() => setStep("email")}
-                className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => setStep("email")}
+                  className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  disabled={loading}
+                >
+                  Voltar
+                </button>
+
+                <button
+                  onClick={() => setStep("password")}
+                  className="w-full text-sm text-primary hover:text-primary/80 transition-colors"
+                  disabled={loading}
+                >
+                  Prefere usar senha? Clique aqui
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground">Senha</label>
+                <Input
+                  type="password"
+                  placeholder="Digite sua senha"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="h-12 bg-transparent border-border focus:glow-border-hover"
+                  disabled={loading}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter") {
+                      handlePasswordLogin();
+                    }
+                  }}
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  Use a senha cadastrada no sistema
+                </p>
+              </div>
+
+              <Button
+                onClick={handlePasswordLogin}
+                className="w-full h-12 bg-transparent border border-border hover:glow-border-hover rounded-lg text-foreground font-normal"
                 disabled={loading}
               >
-                Voltar
-              </button>
+                {loading ? "Verificando..." : "Entrar com senha"}
+              </Button>
+
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => setStep("code")}
+                  className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  disabled={loading}
+                >
+                  Voltar para código OTP
+                </button>
+              </div>
             </div>
           )}
         </div>

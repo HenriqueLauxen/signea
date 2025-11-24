@@ -1,0 +1,505 @@
+================================================================================
+DOCUMENTAÇÃO DA ESTRUTURA DO BANCO DE DADOS - SIGNEA
+================================================================================
+Data: 2024
+Sistema: SIGNEA - Sistema de Gestão de Eventos e Certificados
+Banco: PostgreSQL (Supabase)
+================================================================================
+
+ÍNDICE:
+1. Visão Geral
+2. Extensões
+3. Tabelas Principais
+4. Tabelas de Relacionamento
+5. Índices
+6. Relacionamentos (Foreign Keys)
+7. Constraints e Validações
+8. Triggers e Funções
+9. Storage Buckets
+10. Row Level Security (RLS)
+
+================================================================================
+1. VISÃO GERAL
+================================================================================
+
+O banco de dados SIGNEA é composto por 11 tabelas principais organizadas em:
+- Tabelas base (campus, cursos, coordenadores)
+- Tabelas principais (usuarios, eventos, inscricoes, presencas, certificados)
+- Tabelas de relacionamento (palestrantes, eventos_cursos, evento_palavras_chave)
+
+Todas as tabelas utilizam Row Level Security (RLS) para controle de acesso.
+O sistema utiliza UUID para IDs principais e SERIAL para IDs de tabelas base.
+
+================================================================================
+2. EXTENSÕES
+================================================================================
+
+- uuid-ossp: Geração de UUIDs
+- pgcrypto: Funções criptográficas (para hash SHA256 em certificados)
+
+================================================================================
+3. TABELAS PRINCIPAIS
+================================================================================
+
+3.1. CAMPUS
+-----------
+Descrição: Armazena os campus da instituição
+
+Campos:
+- id: SERIAL PRIMARY KEY
+- nome: TEXT NOT NULL UNIQUE
+- ativo: BOOLEAN DEFAULT true
+- created_at: TIMESTAMPTZ DEFAULT NOW()
+- updated_at: TIMESTAMPTZ DEFAULT NOW()
+
+Relacionamentos:
+- Nenhuma FK
+
+
+3.2. CURSOS
+-----------
+Descrição: Armazena os cursos oferecidos
+
+Campos:
+- id: SERIAL PRIMARY KEY
+- nome: TEXT NOT NULL
+- ativo: BOOLEAN DEFAULT true
+- created_at: TIMESTAMPTZ DEFAULT NOW()
+- updated_at: TIMESTAMPTZ DEFAULT NOW()
+
+Relacionamentos:
+- Nenhuma FK
+
+
+3.3. COORDENADORES
+------------------
+Descrição: Armazena coordenadores dos eventos
+
+Campos:
+- id: UUID PRIMARY KEY DEFAULT uuid_generate_v4()
+- nome: TEXT NOT NULL
+- descricao: TEXT
+- ativo: BOOLEAN DEFAULT true
+- created_at: TIMESTAMPTZ DEFAULT NOW()
+- updated_at: TIMESTAMPTZ DEFAULT NOW()
+
+Relacionamentos:
+- Nenhuma FK (tabela referenciada por eventos.coordenador_id)
+
+
+3.4. USUARIOS
+-------------
+Descrição: Tabela principal de usuários do sistema (PRIMARY KEY: email)
+
+Campos:
+- email: TEXT PRIMARY KEY
+- nome_completo: TEXT NOT NULL
+- matricula: TEXT UNIQUE
+- senha_hash: TEXT (hash bcrypt da senha)
+- tipo: TEXT DEFAULT 'user' (legado - usar perfil)
+- perfil: TEXT DEFAULT 'user' CHECK (perfil IN ('user', 'organizador', 'admin', 'campus'))
+- email_confirmado: BOOLEAN DEFAULT false
+- avatar_url: TEXT (URL do avatar no storage)
+- campus_id: INTEGER REFERENCES campus(id) ON DELETE SET NULL
+- curso_id: INTEGER REFERENCES cursos(id) ON DELETE SET NULL
+- data_nascimento: DATE
+- created_at: TIMESTAMPTZ DEFAULT NOW()
+- updated_at: TIMESTAMPTZ DEFAULT NOW()
+
+Índices:
+- idx_usuarios_email
+- idx_usuarios_matricula
+- idx_usuarios_perfil
+- idx_usuarios_campus_id
+- idx_usuarios_curso_id
+
+NOTA: Esta tabela é a fonte de verdade para autenticação. O sistema usa senha_hash
+com bcrypt. O campo 'tipo' é legado e deve ser substituído por 'perfil' no futuro.
+
+Perfis:
+- user: Usuário comum (aluno)
+- organizador: Organizador de eventos
+- admin: Administrador do sistema
+- campus: Perfil de gestão do campus
+
+
+3.5. EVENTOS
+------------
+Descrição: Armazena todos os eventos do sistema
+
+Campos:
+- id: UUID PRIMARY KEY DEFAULT uuid_generate_v4()
+- titulo: TEXT NOT NULL
+- descricao: TEXT
+- tipo: TEXT
+- data_inicio: TIMESTAMPTZ NOT NULL
+- data_fim: TIMESTAMPTZ NOT NULL
+- data_encerramento_inscricoes: TIMESTAMPTZ
+- local: TEXT NOT NULL
+- latitude: DECIMAL(10, 8) (para validação geográfica)
+- longitude: DECIMAL(11, 8) (para validação geográfica)
+- raio_validacao_metros: INTEGER (raio de validação de presença)
+- campus: TEXT (nome do campus - string livre)
+- sala: TEXT
+- capacidade_maxima: INTEGER NOT NULL DEFAULT 0
+- vagas_disponiveis: INTEGER NOT NULL DEFAULT 0 (atualizado por trigger)
+- organizador_email: TEXT NOT NULL REFERENCES usuarios(email) ON DELETE CASCADE
+- organizador_nome: TEXT
+- carga_horaria: INTEGER (em horas)
+- valor: DECIMAL(10, 2) DEFAULT 0 (0 = gratuito)
+- coordenador_id: UUID REFERENCES coordenadores(id) ON DELETE SET NULL
+- banner_url: TEXT (URL do banner no storage)
+- categoria: TEXT
+- publico_alvo_perfil: TEXT DEFAULT 'aluno' CHECK (publico_alvo_perfil IN ('aluno', 'organizador'))
+- nao_requer_validacao_localizacao: BOOLEAN DEFAULT false
+- permite_presenca_remota: BOOLEAN DEFAULT false (adicionado na migration 001)
+- gera_certificado: BOOLEAN DEFAULT true
+- status: TEXT DEFAULT 'pendente' CHECK (status IN ('pendente', 'aprovado', 'rejeitado', 'cancelado'))
+- aprovador_email: TEXT REFERENCES usuarios(email) ON DELETE SET NULL
+- data_aprovacao: TIMESTAMPTZ
+- motivo_rejeicao: TEXT
+- feedback: TEXT (adicionado na migration 001)
+- codigo_qrcode: TEXT UNIQUE (gerado automaticamente por trigger)
+- created_at: TIMESTAMPTZ DEFAULT NOW()
+- updated_at: TIMESTAMPTZ DEFAULT NOW()
+
+Índices:
+- idx_eventos_organizador_email
+- idx_eventos_status
+- idx_eventos_data_inicio
+- idx_eventos_data_fim
+- idx_eventos_coordenador_id
+- idx_eventos_codigo_qrcode
+- idx_eventos_status_data_inicio (adicionado na migration 001)
+- idx_eventos_publico_alvo_perfil (adicionado na migration 001)
+
+Constraints:
+- eventos_data_fim_after_inicio: data_fim >= data_inicio
+- eventos_vagas_range: vagas_disponiveis >= 0 AND vagas_disponiveis <= capacidade_maxima
+- eventos_encerramento_inscricoes_before_inicio: data_encerramento_inscricoes <= data_inicio
+
+Status do Evento:
+- pendente: Aguardando aprovação
+- aprovado: Aprovado e disponível
+- rejeitado: Rejeitado (com motivo_rejeicao)
+- cancelado: Cancelado pelo organizador
+
+
+3.6. INSCRICOES
+---------------
+Descrição: Registra inscrições de usuários em eventos
+
+Campos:
+- id: UUID PRIMARY KEY DEFAULT uuid_generate_v4()
+- evento_id: UUID NOT NULL REFERENCES eventos(id) ON DELETE CASCADE
+- usuario_email: TEXT NOT NULL REFERENCES usuarios(email) ON DELETE CASCADE
+- status: TEXT DEFAULT 'pendente' CHECK (status IN ('pendente', 'confirmada', 'cancelada'))
+- pagamento_status: TEXT CHECK (pagamento_status IN ('pendente', 'pago')) (NULL para eventos gratuitos)
+- created_at: TIMESTAMPTZ DEFAULT NOW()
+- updated_at: TIMESTAMPTZ DEFAULT NOW()
+
+Constraints:
+- UNIQUE(evento_id, usuario_email): Um usuário só pode se inscrever uma vez por evento
+- inscricoes_pagamento_status_valor_check: pagamento_status só pode ser NOT NULL se eventos.valor > 0
+  (validado via trigger - migration 001)
+
+Índices:
+- idx_inscricoes_evento_id
+- idx_inscricoes_usuario_email
+- idx_inscricoes_status
+- idx_inscricoes_pagamento_status
+
+Status da Inscrição:
+- pendente: Aguardando confirmação/pagamento
+- confirmada: Inscrição confirmada
+- cancelada: Inscrição cancelada
+
+
+3.7. PRESENCAS
+--------------
+Descrição: Registra presenças dos usuários nos eventos
+
+Campos:
+- id: UUID PRIMARY KEY DEFAULT uuid_generate_v4()
+- evento_id: UUID NOT NULL REFERENCES eventos(id) ON DELETE CASCADE
+- usuario_email: TEXT NOT NULL REFERENCES usuarios(email) ON DELETE CASCADE
+- usuario_nome: TEXT (preenchido automaticamente por trigger)
+- inscricao_id: UUID REFERENCES inscricoes(id) ON DELETE CASCADE
+- data_presenca: TIMESTAMPTZ NOT NULL
+- dia_evento: INTEGER (número do dia: 1, 2, 3...) - calculado por trigger
+- latitude_capturada: DECIMAL(10, 8) (localização capturada no registro)
+- longitude_capturada: DECIMAL(11, 8)
+- distancia_validada: BOOLEAN DEFAULT false
+- palavra_chave_usada: TEXT (palavra-chave usada para validação)
+- validado_por: TEXT (email de quem validou manualmente) - adicionado na migration 001
+- usuario_logado: BOOLEAN DEFAULT true
+- created_at: TIMESTAMPTZ DEFAULT NOW()
+
+Constraints:
+- UNIQUE(evento_id, usuario_email, dia_evento): Uma presença por dia por usuário
+
+Índices:
+- idx_presencas_evento_id
+- idx_presencas_usuario_email
+- idx_presencas_data_presenca
+- idx_presencas_dia_evento
+- idx_presencas_inscricao_id
+- idx_presencas_evento_dia (adicionado na migration 001)
+
+Triggers:
+- presencas_set_usuario_nome: Preenche usuario_nome automaticamente
+- presencas_set_dia_evento: Calcula dia_evento baseado em data_presenca e eventos.data_inicio
+
+
+3.8. CERTIFICADOS
+-----------------
+Descrição: Armazena certificados emitidos para usuários
+
+Campos:
+- id: UUID PRIMARY KEY DEFAULT uuid_generate_v4()
+- evento_id: UUID NOT NULL REFERENCES eventos(id) ON DELETE CASCADE
+- usuario_email: TEXT NOT NULL REFERENCES usuarios(email) ON DELETE CASCADE
+- usuario_nome: TEXT NOT NULL
+- codigo_validacao: TEXT NOT NULL UNIQUE (código para validação pública)
+- hash_sha256: TEXT UNIQUE (hash SHA256 do certificado para validação)
+- url_pdf: TEXT (URL do PDF do certificado no storage)
+- data_emissao: TIMESTAMPTZ DEFAULT NOW()
+- created_at: TIMESTAMPTZ DEFAULT NOW()
+
+Constraints:
+- UNIQUE(evento_id, usuario_email): Um certificado por evento por usuário
+
+Índices:
+- idx_certificados_evento_id
+- idx_certificados_usuario_email
+- idx_certificados_codigo_validacao
+- idx_certificados_hash_sha256
+
+
+================================================================================
+4. TABELAS DE RELACIONAMENTO
+================================================================================
+
+4.1. PALESTRANTES
+-----------------
+Descrição: Armazena palestrantes de eventos (um evento pode ter vários)
+
+Campos:
+- id: UUID PRIMARY KEY DEFAULT uuid_generate_v4()
+- evento_id: UUID NOT NULL REFERENCES eventos(id) ON DELETE CASCADE
+- nome: TEXT NOT NULL
+- tema: TEXT NOT NULL
+- descricao: TEXT
+- ordem: INTEGER DEFAULT 0 (ordem de exibição)
+- created_at: TIMESTAMPTZ DEFAULT NOW()
+
+Índices:
+- idx_palestrantes_evento_id
+
+
+4.2. EVENTOS_CURSOS
+-------------------
+Descrição: Relacionamento many-to-many entre eventos e cursos
+
+Campos:
+- id: UUID PRIMARY KEY DEFAULT uuid_generate_v4()
+- evento_id: UUID NOT NULL REFERENCES eventos(id) ON DELETE CASCADE
+- curso_id: INTEGER NOT NULL REFERENCES cursos(id) ON DELETE CASCADE
+- created_at: TIMESTAMPTZ DEFAULT NOW()
+
+Constraints:
+- UNIQUE(evento_id, curso_id): Um curso só pode estar associado uma vez por evento
+
+Índices:
+- idx_eventos_cursos_evento_id
+- idx_eventos_cursos_curso_id
+
+
+4.3. EVENTO_PALAVRAS_CHAVE
+---------------------------
+Descrição: Palavras-chave para validação de presença por dia de evento
+
+Campos:
+- id: UUID PRIMARY KEY DEFAULT uuid_generate_v4()
+- evento_id: UUID NOT NULL REFERENCES eventos(id) ON DELETE CASCADE
+- data_evento: DATE NOT NULL
+- palavra_chave: TEXT NOT NULL
+- created_at: TIMESTAMPTZ DEFAULT NOW()
+
+Constraints:
+- UNIQUE(evento_id, data_evento): Uma palavra-chave por dia por evento
+
+Índices:
+- idx_evento_palavras_chave_evento_id
+- idx_evento_palavras_chave_data_evento
+- idx_evento_palavras_chave_palavra_chave
+
+
+================================================================================
+5. RELACIONAMENTOS (FOREIGN KEYS)
+================================================================================
+
+usuarios:
+  - campus_id -> campus(id) ON DELETE SET NULL
+  - curso_id -> cursos(id) ON DELETE SET NULL
+
+eventos:
+  - organizador_email -> usuarios(email) ON DELETE CASCADE
+  - aprovador_email -> usuarios(email) ON DELETE SET NULL
+  - coordenador_id -> coordenadores(id) ON DELETE SET NULL
+
+inscricoes:
+  - evento_id -> eventos(id) ON DELETE CASCADE
+  - usuario_email -> usuarios(email) ON DELETE CASCADE
+
+presencas:
+  - evento_id -> eventos(id) ON DELETE CASCADE
+  - usuario_email -> usuarios(email) ON DELETE CASCADE
+  - inscricao_id -> inscricoes(id) ON DELETE CASCADE
+
+certificados:
+  - evento_id -> eventos(id) ON DELETE CASCADE
+  - usuario_email -> usuarios(email) ON DELETE CASCADE
+
+palestrantes:
+  - evento_id -> eventos(id) ON DELETE CASCADE
+
+eventos_cursos:
+  - evento_id -> eventos(id) ON DELETE CASCADE
+  - curso_id -> cursos(id) ON DELETE CASCADE
+
+evento_palavras_chave:
+  - evento_id -> eventos(id) ON DELETE CASCADE
+
+
+================================================================================
+6. TRIGGERS E FUNÇÕES
+================================================================================
+
+6.1. update_updated_at_column()
+-------------------------------
+Função: Atualiza automaticamente o campo updated_at quando um registro é modificado
+Tabelas afetadas: campus, cursos, coordenadores, usuarios, eventos, inscricoes
+
+6.2. handle_new_user()
+----------------------
+Função: Sincroniza usuário de auth.users para public.usuarios quando criado
+Trigger: AFTER INSERT ON auth.users
+
+6.3. handle_user_email_confirmed()
+----------------------------------
+Função: Atualiza email_confirmado quando email é confirmado no auth.users
+Trigger: AFTER UPDATE OF email_confirmed_at ON auth.users
+
+6.4. update_vagas_disponiveis()
+--------------------------------
+Função: Atualiza vagas_disponiveis quando inscrição é criada/atualizada/cancelada
+Trigger: AFTER INSERT OR UPDATE OF status ON inscricoes
+
+6.5. presencas_set_usuario_nome()
+---------------------------------
+Função: Preenche usuario_nome automaticamente ao inserir presença
+Trigger: BEFORE INSERT ON presencas
+
+6.6. presencas_set_dia_evento()
+-------------------------------
+Função: Calcula dia_evento (INTEGER) baseado em data_presenca e eventos.data_inicio
+Trigger: BEFORE INSERT ON presencas
+
+6.7. eventos_generate_codigo_qrcode()
+--------------------------------------
+Função: Gera codigo_qrcode único se NULL ao criar evento
+Trigger: BEFORE INSERT ON eventos
+
+6.8. inscricoes_validate_pagamento_status()
+--------------------------------------------
+Função: Valida que pagamento_status só pode ser NOT NULL se eventos.valor > 0
+Trigger: BEFORE INSERT OR UPDATE OF pagamento_status ON inscricoes
+
+
+================================================================================
+7. STORAGE BUCKETS
+================================================================================
+
+7.1. Bucket: eventos
+--------------------
+Descrição: Armazena banners/imagens de eventos
+Tipo: Public
+Limite de arquivo: 5MB
+Tipos permitidos: image/jpeg, image/png, image/webp, image/gif
+
+Policies:
+- SELECT: Público (leitura para todos)
+- INSERT/UPDATE/DELETE: Autenticados
+
+7.2. Bucket: perfil
+-------------------
+Descrição: Armazena avatares de usuários
+Tipo: Public
+Limite de arquivo: 2MB
+Tipos permitidos: image/jpeg, image/png, image/webp
+
+Policies:
+- SELECT: Público (leitura para todos)
+- INSERT/UPDATE/DELETE: Autenticados
+
+
+================================================================================
+8. ROW LEVEL SECURITY (RLS)
+================================================================================
+
+Todas as tabelas têm RLS habilitado. Políticas principais:
+
+CAMPUS / CURSOS / COORDENADORES:
+- SELECT: Anônimos e autenticados (leitura livre)
+- ALL: Autenticados (modificação livre)
+
+USUARIOS:
+- SELECT: Anônimos e autenticados (leitura livre para login/validação)
+- INSERT: Anônimos (cadastro)
+- UPDATE: Autenticados (apenas próprio registro)
+
+EVENTOS:
+- SELECT: Anônimos e autenticados (leitura livre)
+- INSERT: Autenticados (criação)
+- UPDATE/DELETE: Organizador do evento ou admin
+
+INSCRICOES:
+- SELECT: Anônimos e autenticados (leitura livre)
+- INSERT: Autenticados (apenas própria inscrição)
+- UPDATE: Usuário dono ou organizador/admin do evento
+- DELETE: Usuário dono (cancelamento)
+
+PRESENCAS:
+- SELECT: Anônimos e autenticados (leitura livre)
+- INSERT: Autenticados (apenas própria presença)
+- UPDATE/DELETE: Usuário dono ou organizador/admin do evento
+
+CERTIFICADOS:
+- SELECT: Anônimos e autenticados (validação pública)
+- INSERT/UPDATE: Apenas organizador do evento ou admin
+
+PALESTRANTES / EVENTOS_CURSOS / EVENTO_PALAVRAS_CHAVE:
+- SELECT: Anônimos e autenticados (leitura livre)
+- ALL: Apenas organizador do evento ou admin
+
+
+================================================================================
+9. OBSERVAÇÕES IMPORTANTES
+================================================================================
+
+1. A tabela usuarios usa email como PRIMARY KEY (não há campo id separado)
+2. O campo senha_hash usa bcrypt para hash de senhas
+3. O sistema suporta autenticação híbrida: auth.users (Supabase Auth) + public.usuarios
+4. vagas_disponiveis é atualizado automaticamente por trigger
+5. dia_evento em presencas é INTEGER (1, 2, 3...) calculado automaticamente
+6. codigo_qrcode é gerado automaticamente se NULL ao criar evento
+7. pagamento_status em inscricoes só pode ser NOT NULL se o evento tiver valor > 0
+8. O perfil 'campus' foi adicionado na migration 001 (não estava no schema original)
+9. A coluna presencas.dia_evento foi alterada de DATE para INTEGER na migration 001
+
+
+================================================================================
+FIM DA DOCUMENTAÇÃO
+================================================================================
+

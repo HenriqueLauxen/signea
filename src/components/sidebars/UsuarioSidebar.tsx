@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { NavLink } from "@/components/NavLink";
 import {
   Calendar,
@@ -9,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import { useSidebarMinimized } from "@/hooks/useSidebarMinimized";
 
 const menuItems = [
   { path: "/usuario/eventos", label: "Eventos", icon: Calendar },
@@ -19,7 +19,7 @@ const menuItems = [
 ];
 
 export function UsuarioSidebar() {
-  const [minimizado, setMinimizado] = useState(false);
+  const { minimizado, toggleMinimizado } = useSidebarMinimized();
 
   return (
     <aside className={`${minimizado ? 'w-16' : 'w-64'} border-r border-border bg-card/30 backdrop-blur-sm flex flex-col transition-all duration-300 relative`}>
@@ -61,11 +61,12 @@ export function UsuarioSidebar() {
           );
         })}
       </nav>
-      <div className="p-3 border-t border-border">
+      <div className="p-3 border-t border-border flex-shrink-0">
         <button
-          onClick={() => setMinimizado(!minimizado)}
-          className={`w-full flex items-center ${minimizado ? 'justify-center' : 'justify-center gap-2'} px-3 py-2 rounded-lg text-sm transition-colors hover:bg-accent hover:text-accent-foreground text-muted-foreground`}
+          onClick={toggleMinimizado}
+          className={`w-full flex items-center ${minimizado ? 'justify-center' : 'justify-center gap-2'} px-3 py-2 rounded-lg text-sm transition-colors hover:bg-accent hover:text-accent-foreground text-muted-foreground z-10 relative`}
           title={minimizado ? "Maximizar" : "Minimizar"}
+          aria-label={minimizado ? "Maximizar menu" : "Minimizar menu"}
         >
           {minimizado ? (
             <ChevronRight className="w-4 h-4" />

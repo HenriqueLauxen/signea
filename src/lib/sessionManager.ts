@@ -1,127 +1,89 @@
 import { supabase } from "./supabase";
 
-const SESSION_TIMEOUT = 60 * 60 * 1000; // 60 minutos em milissegundos
+const SESSION_CACHE_KEY = "app_session_cache";
 
 /**
- * Verifica se existe uma sessão ativa válida
+ * Obtém sessão de forma INSTANTÂNEA (síncrona) via localStorage
+ * Retorna objeto session ou null
  */
-export const checkSession = async (): Promise<boolean> => {
+export const getSessionSync = (): any => {
   try {
-    // Primeiro verifica sessão do Supabase Auth
-    const { data: { session } } = await supabase.auth.getSession();
+    // Lê localStorage do Supabase diretamente (instantâneo)
+    const supabaseSession = localStorage.getItem("supabase.auth.token");
+    if (supabaseSession) {
+      try {
+        const parsed = JSON.parse(supabaseSession);
+        const session = parsed?.currentSession;
 
-    if (session) {
-      // Atualiza a atividade
-      await updateActivity(session.user.email || "");
-      return true;
-    }
-
-    // Se não tem sessão do Supabase, verifica sessão customizada
-    const sessionToken = localStorage.getItem("session_token");
-    const sessionEmail = localStorage.getItem("session_email");
-
-    if (!sessionToken || !sessionEmail) {
-      return false;
-    }
-
-    // Verifica se a sessão ainda é válida no banco usando RPC (bypassing RLS)
-    const { data: usuarios, error } = await supabase
-      .rpc('validate_session', {
-        p_email: sessionEmail,
-        p_token: sessionToken
-      });
-
-    if (error || !usuarios || usuarios.length === 0) {
-      clearSession();
-      return false;
-    }
-
-    const usuario = usuarios[0];
-
-    // Verifica se o e-mail está confirmado
-    if (usuario.email_confirmado === false) {
-      clearSession();
-      return false;
-    }
-
-    // Verifica se a sessão expirou por timeout
-    const sessionExpiresAt = new Date(usuario.session_expires_at);
-    const now = new Date();
-
-    if (sessionExpiresAt < now) {
-      await clearSessionInDB(sessionEmail);
-      clearSession();
-      return false;
-    }
-
-    // Verifica inatividade (60 minutos)
-    if (usuario.last_activity_at) {
-      const lastActivity = new Date(usuario.last_activity_at);
-      const timeSinceLastActivity = now.getTime() - lastActivity.getTime();
-
-      if (timeSinceLastActivity > SESSION_TIMEOUT) {
-        await clearSessionInDB(sessionEmail);
-        clearSession();
-        return false;
+        // Verifica se tem token e se não expirou
+        if (session?.access_token) {
+          const expiresAt = session.expires_at;
+          if (expiresAt && expiresAt * 1000 > Date.now()) {
+            // Retorna objeto session válido
+            return {
+              access_token: session.access_token,
+              expires_at: session.expires_at,
+              expires_in: session.expires_in,
+              refresh_token: session.refresh_token,
+              token_type: session.token_type,
+              user: session.user,
+            };
+          }
+        }
+      } catch (e) {
+        // Ignora erro de parse
       }
     }
 
-    // Sessão válida, atualiza última atividade
-    await updateActivity(sessionEmail);
-    return true;
+    return null;
   } catch (err) {
-    console.error("Erro ao verificar sessão:", err);
+    console.error("Erro ao obter sessão sync:", err);
+    return null;
+  }
+};
+
+/**
+ * Verifica sessão de forma INSTANTÂNEA (síncrona) via cache
+ * Não bloqueia a UI
+ */
+export const checkSessionSync = (): boolean => {
+  return getSessionSync() !== null;
+};
+
+/**
+ * Verifica sessão completa de forma assíncrona (em background)
+ * Atualiza o cache
+ */
+export const checkSessionAsync = async (): Promise<boolean> => {
+  try {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+
+    const isAuthenticated = !error && !!session;
+
+    // Atualiza cache
+    sessionStorage.setItem(
+      SESSION_CACHE_KEY,
+      JSON.stringify({
+        isAuthenticated,
+        timestamp: Date.now(),
+      })
+    );
+
+    return isAuthenticated;
+  } catch (err) {
+    console.error("Erro ao verificar sessão async:", err);
     return false;
   }
 };
 
 /**
- * Atualiza a última atividade do usuário
+ * Limpa o cache de sessão
  */
-export const updateActivity = async (email: string) => {
-  try {
-    const sessionToken = localStorage.getItem("session_token");
-
-    if (!sessionToken) return;
-
-    const now = new Date();
-    const newExpiresAt = new Date(now.getTime() + SESSION_TIMEOUT);
-
-    await supabase
-      .rpc('update_session_activity', {
-        p_email: email,
-        p_token: sessionToken
-      });
-  } catch (err) {
-    console.error("Erro ao atualizar atividade:", err);
-  }
-};
-
-/**
- * Limpa a sessão no banco de dados
- */
-export const clearSessionInDB = async (email: string) => {
-  try {
-    await supabase
-      .from("usuarios")
-      .update({
-        session_token: null,
-        session_expires_at: null
-      })
-      .eq("email", email);
-  } catch (err) {
-    console.error("Erro ao limpar sessão no BD:", err);
-  }
-};
-
-/**
- * Limpa a sessão local
- */
-export const clearSession = () => {
-  localStorage.removeItem("session_token");
-  localStorage.removeItem("session_email");
-  // Also clear any other potential auth items
-  localStorage.removeItem("supabase.auth.token");
+export const clearSessionCache = () => {
+  sessionStorage.removeItem(SESSION_CACHE_KEY);
 };
 
 /**
@@ -129,86 +91,47 @@ export const clearSession = () => {
  */
 export const logout = async () => {
   try {
-    const sessionEmail = localStorage.getItem("session_email");
-
-    // Limpa sessão customizada
-    if (sessionEmail) {
-      await clearSessionInDB(sessionEmail);
-    }
-
-    clearSession();
-
-    // Limpa sessão do Supabase Auth
+    clearSessionCache();
     await supabase.auth.signOut();
-
-    // Force reload to clear any in-memory state
     window.location.href = "/login";
   } catch (err) {
     console.error("Erro ao fazer logout:", err);
-    // Force logout anyway
-    clearSession();
+    clearSessionCache();
     window.location.href = "/login";
   }
 };
 
 /**
- * Inicia monitoramento de atividade
- * Atualiza a atividade a cada 5 minutos se houver interação
+ * Salva sessão após login bem-sucedido
  */
-export const startActivityMonitoring = () => {
-  let activityTimeout: NodeJS.Timeout;
-  let lastUpdate = Date.now();
-  const UPDATE_INTERVAL = 5 * 60 * 1000; // Atualizar no banco a cada 5 minutos
-
-  const handleActivity = async () => {
-    // Limpa o timeout de logout
-    clearTimeout(activityTimeout);
-
-    // Verifica se precisa atualizar no banco (throttle)
-    const now = Date.now();
-    if (now - lastUpdate > UPDATE_INTERVAL) {
-      lastUpdate = now;
-      const sessionEmail = localStorage.getItem("session_email");
-      if (sessionEmail) {
-        // Não aguarda o update para não bloquear a UI
-        updateActivity(sessionEmail).catch(console.error);
-      }
-    }
-
-    // Reinicia o timeout de logout
-    activityTimeout = setTimeout(async () => {
-      const isValid = await checkSession();
-      if (!isValid) {
-        window.location.href = "/login";
-      }
-    }, SESSION_TIMEOUT);
-  };
-
-  // Eventos que indicam atividade do usuário
-  const events = ["mousedown", "keydown", "scroll", "touchstart", "click"];
-
-  // Usa um debounce leve para os eventos de alta frequência
-  let debounceTimer: NodeJS.Timeout;
-  const onUserActivity = () => {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(handleActivity, 1000);
-  };
-
-  events.forEach(event => {
-    document.addEventListener(event, onUserActivity, { passive: true });
-  });
-
-  // Inicia o timer
-  handleActivity();
-
-  // Retorna função para limpar os listeners
-  return () => {
-    clearTimeout(activityTimeout);
-    clearTimeout(debounceTimer);
-    events.forEach(event => {
-      document.removeEventListener(event, onUserActivity);
-    });
-  };
+export const saveSessionCache = () => {
+  sessionStorage.setItem(
+    SESSION_CACHE_KEY,
+    JSON.stringify({
+      isAuthenticated: true,
+      timestamp: Date.now(),
+    })
+  );
 };
 
+/**
+ * Inicia monitoramento de sessão em background
+ * Verifica periodicamente sem bloquear a UI
+ */
+export const startSessionMonitoring = () => {
+  // Verifica a sessão real a cada 30 segundos em background
+  const intervalId = setInterval(async () => {
+    const isValid = await checkSessionAsync();
 
+    if (!isValid) {
+      // Sessão inválida, limpa cache
+      clearSessionCache();
+      // NÃO faz logout automático - apenas limpa o cache
+    }
+  }, 30000); // 30 segundos
+
+  // Retorna função para limpar
+  return () => {
+    clearInterval(intervalId);
+  };
+};

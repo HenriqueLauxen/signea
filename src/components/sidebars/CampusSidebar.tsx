@@ -6,7 +6,10 @@ import {
   UserCog,
   LayoutDashboard,
   FileText,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
+import { useSidebarMinimized } from "@/hooks/useSidebarMinimized";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Visão Geral", path: "/campus/visao-geral" },
@@ -17,12 +20,30 @@ const menuItems = [
 ];
 
 export function CampusSidebar() {
+  const { minimizado, toggleMinimizado } = useSidebarMinimized();
+
   return (
-    <aside className="w-64 border-r border-border bg-card/30 backdrop-blur-sm flex flex-col">
-      <div className="p-6">
-        <h2 className="text-sm font-light text-muted-foreground uppercase tracking-wider">
-          Menu Campus
-        </h2>
+    <aside className={`${minimizado ? 'w-16' : 'w-64'} border-r border-border bg-card/30 backdrop-blur-sm flex flex-col transition-all duration-300 relative`}>
+      <div className={`${minimizado ? 'p-4' : 'p-6'} flex items-center gap-3`}>
+        {!minimizado && (
+          <>
+            <img
+              src="/logo-bgremoved.png"
+              alt="Logo"
+              className="w-12 h-12 object-contain"
+            />
+            <h2 className="text-sm font-light text-muted-foreground uppercase tracking-wider">
+              Menu Campus
+            </h2>
+          </>
+        )}
+        {minimizado && (
+          <img
+            src="/logo-bgremoved.png"
+            alt="Logo"
+            className="w-12 h-12 object-contain mx-auto"
+          />
+        )}
       </div>
       <nav className="flex-1 px-3 space-y-1">
         {menuItems.map((item) => {
@@ -31,15 +52,30 @@ export function CampusSidebar() {
             <NavLink
               key={item.path}
               to={item.path}
-              className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+              className={`flex items-center ${minimizado ? 'justify-center' : 'gap-3'} px-3 py-2 rounded-lg text-sm transition-colors hover:bg-accent hover:text-accent-foreground`}
               activeClassName="bg-muted text-primary font-medium"
+              title={minimizado ? item.label : undefined}
             >
-              <Icon className="w-4 h-4" />
-              {item.label}
+              <Icon className="w-4 h-4 flex-shrink-0" />
+              {!minimizado && <span>{item.label}</span>}
             </NavLink>
           );
         })}
       </nav>
+      <div className="p-3 border-t border-border flex-shrink-0">
+        <button
+          onClick={toggleMinimizado}
+          className={`w-full flex items-center ${minimizado ? 'justify-center' : 'justify-center gap-2'} px-3 py-2 rounded-lg text-sm transition-colors hover:bg-accent hover:text-accent-foreground text-muted-foreground z-10 relative`}
+          title={minimizado ? "Maximizar" : "Minimizar"}
+          aria-label={minimizado ? "Maximizar menu" : "Minimizar menu"}
+        >
+          {minimizado ? (
+            <ChevronRight className="w-4 h-4" />
+          ) : (
+            <ChevronLeft className="w-4 h-4" />
+          )}
+        </button>
+      </div>
     </aside>
   );
 }

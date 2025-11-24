@@ -2,7 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Printer, Award, CheckCircle, XCircle, Loader2 } from "lucide-react";
-import { modal } from "@/contexts/ModalContext";
+import { useToast } from "@/contexts/ToastContext";
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -26,6 +26,7 @@ interface Certificado {
 }
 
 export default function Certificados() {
+  const toast = useToast();
   const [certificados, setCertificados] = useState<Certificado[]>([]);
   const [loading, setLoading] = useState(true);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -35,12 +36,12 @@ export default function Certificados() {
       console.log('⚠️ Email não disponível');
       return;
     }
-    
+
     console.log('🔄 Buscando certificados para:', userEmail);
-    
+
     try {
       setLoading(true);
-      
+
       // Buscar certificados do usuário
       const { data: certData, error: certError } = await supabase
         .from("certificados")
@@ -74,14 +75,14 @@ export default function Certificados() {
       // Filtrar apenas eventos que já terminaram
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0); // Zerar horas para comparação correta
-      
+
       const certificadosFiltrados = (certData || []).filter((cert) => {
         const eventos = cert.eventos;
         if (!eventos) return false;
-        
+
         const evento = Array.isArray(eventos) ? eventos[0] : eventos;
         if (!evento || typeof evento !== 'object' || !('data_fim' in evento)) return false;
-        
+
         const dataFim = new Date(evento.data_fim as string);
         return dataFim < hoje; // Mostrar apenas se o evento já terminou
       });
@@ -95,6 +96,7 @@ export default function Certificados() {
         usuario_email: string;
         usuario_nome: string;
         codigo_validacao: string;
+        hash_sha256?: string | null;
         url_pdf?: string | null;
         data_emissao: string;
         eventos?: unknown;
@@ -112,7 +114,8 @@ export default function Certificados() {
               usuario_email: cert.usuario_email,
               usuario_nome: cert.usuario_nome,
               codigo_validacao: cert.codigo_validacao,
-              url_pdf: cert.url_pdf,
+              hash_sha256: cert.hash_sha256 ?? null,
+              url_pdf: cert.url_pdf ?? null,
               data_emissao: cert.data_emissao,
               evento: Array.isArray(cert.eventos) ? (cert.eventos[0] as unknown as Certificado['evento']) : (cert.eventos as unknown as Certificado['evento']),
               presenca_percentual: 0
@@ -150,8 +153,8 @@ export default function Certificados() {
             usuario_email: cert.usuario_email,
             usuario_nome: cert.usuario_nome,
             codigo_validacao: cert.codigo_validacao,
-            hash_sha256: cert.hash_sha256,
-            url_pdf: cert.url_pdf,
+            hash_sha256: cert.hash_sha256 ?? null,
+            url_pdf: cert.url_pdf ?? null,
             data_emissao: cert.data_emissao,
             evento: Array.isArray(cert.eventos) ? (cert.eventos[0] as unknown as Certificado['evento']) : (cert.eventos as unknown as Certificado['evento']),
             presenca_percentual: percentual
@@ -162,7 +165,7 @@ export default function Certificados() {
       setCertificados(certificadosComPresenca);
     } catch (error: unknown) {
       console.error("Erro ao buscar certificados:", error);
-      modal.error("Erro ao carregar certificados");
+      toast.error("Erro ao carregar certificados");
     } finally {
       setLoading(false);
     }
@@ -190,7 +193,7 @@ export default function Certificados() {
 
   const copyHash = (hash: string) => {
     navigator.clipboard.writeText(hash);
-    modal.success("Código de validação copiado!");
+    toast.success("Código de validação copiado!");
   };
 
   const formatDate = (date: string) => {
@@ -221,7 +224,7 @@ export default function Certificados() {
         <div className="space-y-4">
           {certificados.map((cert) => {
             const elegivel = (cert.presenca_percentual || 0) >= 75;
-            
+
             return (
               <Card key={cert.id} className="p-6">
                 <div className="flex justify-between items-start mb-4">
@@ -271,15 +274,15 @@ export default function Certificados() {
 
                 {elegivel && (
                   <div className="flex gap-2">
-                    <Button 
-                      variant="elegant" 
-                      size="sm" 
+                    <Button
+                      variant="elegant"
+                      size="sm"
                       onClick={() => {
                         const hash = cert.hash_sha256 || cert.codigo_validacao;
                         if (hash) {
                           window.location.href = `/certificado/${hash}`;
                         } else {
-                          modal.error("Hash do certificado não disponível");
+                          toast.error("Hash do certificado não disponível");
                         }
                       }}
                     >
@@ -296,3 +299,4 @@ export default function Certificados() {
     </div>
   );
 }
+
