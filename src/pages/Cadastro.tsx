@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNavigate, useLocation } from "react-router-dom";
-import { modal } from "@/contexts/ModalContext";
+import { useToast } from "@/contexts/ToastContext";
 import { supabase } from "@/lib/supabase";
 import bcrypt from "bcryptjs";
 import { DatePicker } from "@/components/DatePicker";
@@ -29,6 +29,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 const Cadastro = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const toast = useToast();
   const emailOrMatricula = (location.state as { emailOrMatricula?: string })?.emailOrMatricula || "";
   
   const [formData, setFormData] = useState({
@@ -183,7 +184,7 @@ const Cadastro = () => {
       // Formatar data para string no formato ISO
       const dataNascimentoStr = formData.dataNascimento.toISOString().split('T')[0];
 
-      // Inserir usuário no banco (com email não confirmado)
+      // Inserir usuário no banco (com email confirmado)
       const { data, error } = await supabase
         .from("usuarios")
         .insert([{
@@ -195,7 +196,7 @@ const Cadastro = () => {
           data_nascimento: dataNascimentoStr,
           senha_hash: senhaHash,
           perfil: "user",
-          email_confirmado: false
+          email_confirmado: true // Email já confirmado no cadastro
         }])
         .select();
 
@@ -213,70 +214,13 @@ const Cadastro = () => {
         }
         setShowError(true);
       } else {
-        // Gerar token de confirmação
-        const confirmationToken = crypto.randomUUID();
-        const expiresAt = new Date();
-        expiresAt.setMinutes(expiresAt.getMinutes() + 15); // Expira em 15 minutos
-
-        // Salvar token no banco
-        const { error: tokenError } = await supabase
-          .from("email_confirmation_tokens")
-          .insert({
-            email: formData.email,
-            token: confirmationToken,
-            expires_at: expiresAt.toISOString()
-          });
-
-        if (tokenError) {
-          console.error("Erro ao criar token:", tokenError);
-          setErrorMessage("Erro ao gerar token de confirmação. Tente novamente.");
-          setShowError(true);
-          return;
-        }
-
-        // Enviar código OTP para confirmação
-        const confirmationLink = `${window.location.origin}/confirmar-email?token=${confirmationToken}`;
+        // Cadastro realizado com sucesso!
+        // NÃO enviar OTP - usuário já está cadastrado e pode fazer login
         
-        try {
-          // Tentar usar Edge Function primeiro
-          const { error: emailError } = await supabase.functions.invoke('send-confirmation-email', {
-            body: {
-              email: formData.email,
-              token: confirmationToken,
-              nome: formData.nomeCompleto,
-              link: confirmationLink
-            }
-          });
-
-          if (emailError) {
-            console.error("Erro ao enviar e-mail customizado:", emailError);
-          }
-        } catch (err) {
-          console.error("Erro ao chamar Edge Function:", err);
-        }
-
-        // Sempre enviar código OTP do Supabase
-        const { error: otpError } = await supabase.auth.signInWithOtp({
-          email: formData.email,
-          options: {
-            shouldCreateUser: false,
-            emailRedirectTo: confirmationLink
-          }
-        });
-
-        if (otpError) {
-          console.error("Erro ao enviar código:", otpError);
-          if (otpError.message.includes("rate limit") || otpError.message.includes("rate_limit")) {
-            setErrorMessage("Muitas tentativas de envio de código. Por favor, aguarde alguns minutos antes de tentar novamente.");
-          } else {
-            setErrorMessage("Erro ao enviar código de confirmação. Tente novamente.");
-          }
-          setShowError(true);
-          return;
-        }
-
-        // Redirecionar para tela de código
-        navigate("/confirmar-codigo", { state: { email: formData.email } });
+        toast.success("Cadastro realizado com sucesso! Faça login para continuar.");
+        
+        // Redirecionar para tela de login
+        navigate("/login", { state: { email: formData.email } });
       }
     } catch (err) {
       console.error("Erro no cadastro:", err);
@@ -529,4 +473,5 @@ const Cadastro = () => {
 };
 
 export default Cadastro;
+
 
