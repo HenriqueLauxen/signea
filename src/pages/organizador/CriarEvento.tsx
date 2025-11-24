@@ -227,13 +227,13 @@ export default function CriarEvento() {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       
       if (errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
-        toast.error("❌ Bucket 'eventos' não encontrado. Crie o bucket no Supabase Storage.");
+        toast.error(" Bucket 'eventos' não encontrado. Crie o bucket no Supabase Storage.");
       } else if (errorMessage.includes('permission') || errorMessage.includes('policy')) {
-        toast.error("❌ Sem permissão para upload. Configure as políticas do bucket.");
+        toast.error(" Sem permissão para upload. Configure as políticas do bucket.");
       } else if (errorMessage.includes('size')) {
-        toast.error("❌ Arquivo muito grande. Máximo: 5MB");
+        toast.error(" Arquivo muito grande. Máximo: 5MB");
       } else {
-        toast.error(`❌ Erro ao fazer upload: ${errorMessage}`);
+        toast.error(` Erro ao fazer upload: ${errorMessage}`);
       }
       
       return null;
@@ -412,7 +412,7 @@ export default function CriarEvento() {
         }
       }
 
-      toast.success("🎉 Evento criado com sucesso! Aguardando aprovação.");
+      toast.success("Evento criado com sucesso! Aguardando aprovação.");
       
       // Pequeno delay para mostrar a mensagem antes de redirecionar
       setTimeout(() => {
@@ -425,11 +425,11 @@ export default function CriarEvento() {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       
       if (errorMessage.includes('permission denied')) {
-        toast.error("❌ Erro de permissão. Verifique as políticas de RLS no Supabase.");
+        toast.error(" Erro de permissão. Verifique as políticas de RLS no Supabase.");
       } else if (errorMessage.includes('relation "eventos" does not exist')) {
-        toast.error("❌ Tabela 'eventos' não encontrada. Execute o script SQL do banco de dados.");
+        toast.error(" Tabela 'eventos' não encontrada. Execute o script SQL do banco de dados.");
       } else {
-        toast.error(`❌ Erro ao criar evento: ${errorMessage}`);
+        toast.error(` Erro ao criar evento: ${errorMessage}`);
       }
     } finally {
       setLoading(false);

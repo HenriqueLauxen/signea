@@ -121,7 +121,7 @@ export default function Eventos() {
       }
 
       if (error) {
-        console.error('❌ Erro ao buscar eventos:', error);
+        console.error(' Erro ao buscar eventos:', error);
         throw error;
       }
 
@@ -136,7 +136,7 @@ export default function Eventos() {
           .in('evento_id', eventosIds);
 
         if (inscricoesError) {
-          console.error('❌ Erro ao buscar inscrições:', inscricoesError);
+          console.error(' Erro ao buscar inscrições:', inscricoesError);
         }
 
         // Considerar inscrito apenas se o status for 'confirmada' (não cancelada)
@@ -207,7 +207,7 @@ export default function Eventos() {
         setEventos(data || []);
       }
     } catch (error) {
-      console.error('❌ Erro ao carregar eventos:', error);
+      console.error(' Erro ao carregar eventos:', error);
       toast.error('Erro ao carregar eventos');
     } finally {
       setLoading(false);

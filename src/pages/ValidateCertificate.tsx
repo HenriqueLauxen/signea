@@ -41,8 +41,12 @@ const ValidateCertificate = () => {
   const validateWithHash = async (hashCode: string) => {
     setLoading(true);
     try {
-      // Buscar certificado pelo código de validação
-      const { data: certData, error } = await supabase
+      // Buscar certificado pelo hash SHA256 ou código de validação
+      // Primeiro tenta pelo hash SHA256
+      let certData = null;
+      let error = null;
+
+      const { data: certByHash, error: hashError } = await supabase
         .from("certificados")
         .select(`
           usuario_nome,
@@ -50,8 +54,30 @@ const ValidateCertificate = () => {
           data_emissao,
           evento_id
         `)
-        .eq("codigo_validacao", hashCode.trim())
-        .single();
+        .eq("hash_sha256", hashCode.trim())
+        .maybeSingle();
+
+      if (certByHash && !hashError) {
+        certData = certByHash;
+      } else {
+        // Se não encontrou por hash, tenta pelo código de validação
+        const { data: certByCode, error: codeError } = await supabase
+          .from("certificados")
+          .select(`
+            usuario_nome,
+            usuario_email,
+            data_emissao,
+            evento_id
+          `)
+          .eq("codigo_validacao", hashCode.trim())
+          .maybeSingle();
+
+        if (certByCode && !codeError) {
+          certData = certByCode;
+        } else {
+          error = codeError || hashError;
+        }
+      }
 
       if (error || !certData) {
         console.error("Certificado não encontrado:", error);
@@ -136,11 +162,14 @@ const ValidateCertificate = () => {
             <div className="space-y-6">
               <div className="space-y-4">
                 <Input
-                  placeholder="Código Hash do certificado"
+                  placeholder="Hash SHA256 ou Código de Validação"
                   value={hash}
                   onChange={(e) => setHash(e.target.value)}
                   className="h-12 bg-transparent border-border focus:glow-border-hover font-mono text-sm"
                 />
+                <p className="text-xs text-muted-foreground text-center">
+                  Digite o hash SHA256 ou o código de validação do certificado
+                </p>
 
                 <Button
                   variant="elegant"

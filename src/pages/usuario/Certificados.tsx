@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Printer, Award, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { Printer, Award, CheckCircle, Loader2 } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
@@ -66,28 +66,37 @@ export default function Certificados() {
         .order("data_emissao", { ascending: false });
 
       if (certError) {
-        console.error('❌ Erro ao buscar certificados:', certError);
+        console.error(' Erro ao buscar certificados:', certError);
         throw certError;
       }
 
-      console.log('✅ Certificados encontrados:', certData?.length || 0);
+      console.log('Certificados encontrados:', certData?.length || 0);
 
-      // Filtrar apenas eventos que já terminaram
-      const hoje = new Date();
-      hoje.setHours(0, 0, 0, 0); // Zerar horas para comparação correta
-
+      // Filtrar certificados válidos (apenas verificar se tem evento válido)
+      // Mostrar TODOS os certificados que existem, independente de data
       const certificadosFiltrados = (certData || []).filter((cert) => {
         const eventos = cert.eventos;
-        if (!eventos) return false;
+        if (!eventos) {
+          console.warn('⚠️ Certificado sem evento:', cert.id);
+          return false;
+        }
 
         const evento = Array.isArray(eventos) ? eventos[0] : eventos;
-        if (!evento || typeof evento !== 'object' || !('data_fim' in evento)) return false;
+        if (!evento || typeof evento !== 'object' || !('data_fim' in evento)) {
+          console.warn('⚠️ Certificado com evento inválido:', cert.id, evento);
+          return false;
+        }
 
-        const dataFim = new Date(evento.data_fim as string);
-        return dataFim < hoje; // Mostrar apenas se o evento já terminou
+        // Mostrar TODOS os certificados que têm evento válido
+        console.log(`✅ Certificado ${cert.id} será exibido:`, {
+          evento: evento.titulo,
+          dataEmissao: cert.data_emissao
+        });
+        
+        return true; // Sempre mostrar se tem evento válido
       });
 
-      console.log(`📅 Certificados de eventos finalizados: ${certificadosFiltrados.length}/${certData?.length || 0}`);
+      console.log(`📅 Certificados filtrados: ${certificadosFiltrados.length}/${certData?.length || 0}`);
 
       // Para cada certificado, calcular percentual de presença
       type RawCert = {
@@ -145,7 +154,10 @@ export default function Certificados() {
 
           const totalDias = (totalDiasCount ?? 1) as number;
           const diasPresentes = (presencasUsuario ?? 0) as number;
-          const percentual = Math.round((diasPresentes / totalDias) * 100);
+          // Calcular percentual, evitando NaN
+          const percentual = totalDias > 0 && !isNaN(diasPresentes) && !isNaN(totalDias)
+            ? Math.round((diasPresentes / totalDias) * 100)
+            : 0;
 
           return {
             id: cert.id,
@@ -223,7 +235,10 @@ export default function Certificados() {
       ) : (
         <div className="space-y-4">
           {certificados.map((cert) => {
-            const elegivel = (cert.presenca_percentual || 0) >= 75;
+            // Sempre considerar apto (removida validação por presença)
+            const elegivel = true;
+            const presencaPercentual = cert.presenca_percentual ?? 0;
+            const presencaValida = !isNaN(presencaPercentual) && isFinite(presencaPercentual);
 
             return (
               <Card key={cert.id} className="p-6">
@@ -231,30 +246,25 @@ export default function Certificados() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-xl font-normal">{cert.evento.titulo}</h3>
-                      {elegivel ? (
-                        <Badge variant="default" className="gap-1">
-                          <CheckCircle className="w-3 h-3" />
-                          Apto
-                        </Badge>
-                      ) : (
-                        <Badge variant="destructive" className="gap-1">
-                          <XCircle className="w-3 h-3" />
-                          Não Apto
-                        </Badge>
-                      )}
+                      <Badge variant="default" className="gap-1">
+                        <CheckCircle className="w-3 h-3" />
+                        Apto
+                      </Badge>
                     </div>
                     <div className="space-y-1 text-sm text-muted-foreground">
                       <p>Emitido em {formatDate(cert.data_emissao)}</p>
                       <p>{cert.evento.carga_horaria}h de carga horária</p>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden max-w-xs">
-                          <div
-                            className="bg-primary h-full transition-all"
-                            style={{ width: `${cert.presenca_percentual}%` }}
-                          />
+                      {presencaValida && presencaPercentual > 0 && (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden max-w-xs">
+                            <div
+                              className="bg-primary h-full transition-all"
+                              style={{ width: `${presencaPercentual}%` }}
+                            />
+                          </div>
+                          <span className="text-xs">{presencaPercentual}% presença</span>
                         </div>
-                        <span className="text-xs">{cert.presenca_percentual}% presença</span>
-                      </div>
+                      )}
                     </div>
                     <div className="mt-3 p-3 bg-muted rounded-md">
                       <p className="text-xs text-muted-foreground mb-1">Código de Validação:</p>
@@ -272,25 +282,24 @@ export default function Certificados() {
                   </div>
                 </div>
 
-                {elegivel && (
-                  <div className="flex gap-2">
-                    <Button
-                      variant="elegant"
-                      size="sm"
-                      onClick={() => {
-                        const hash = cert.hash_sha256 || cert.codigo_validacao;
-                        if (hash) {
-                          window.location.href = `/certificado/${hash}`;
-                        } else {
-                          toast.error("Hash do certificado não disponível");
-                        }
-                      }}
-                    >
-                      <Printer className="w-4 h-4 mr-2" />
-                      Imprimir Certificado
-                    </Button>
-                  </div>
-                )}
+                {/* Sempre mostrar botão de imprimir (removida validação por presença) */}
+                <div className="flex gap-2">
+                  <Button
+                    variant="elegant"
+                    size="sm"
+                    onClick={() => {
+                      const hash = cert.hash_sha256 || cert.codigo_validacao;
+                      if (hash) {
+                        window.location.href = `/certificado/${hash}`;
+                      } else {
+                        toast.error("Hash do certificado não disponível");
+                      }
+                    }}
+                  >
+                    <Printer className="w-4 h-4 mr-2" />
+                    Imprimir Certificado
+                  </Button>
+                </div>
               </Card>
             );
           })}
