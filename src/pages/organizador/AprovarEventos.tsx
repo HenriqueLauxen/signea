@@ -425,12 +425,14 @@ export default function AprovarEventos() {
         return;
       }
 
-      // Upload do banner se houver
-      let bannerUrlFinal = null;
+      // Upload do banner se houver novo arquivo
+      let bannerUrlFinal = selectedSolicitacao.banner_url; // Manter banner existente por padrão
       if (bannerFile) {
-        bannerUrlFinal = await uploadBanner();
-        if (!bannerUrlFinal) {
-          toast.warning("Evento será aprovado sem banner");
+        const novoBannerUrl = await uploadBanner();
+        if (novoBannerUrl) {
+          bannerUrlFinal = novoBannerUrl;
+        } else {
+          toast.warning("Erro ao fazer upload do banner. Mantendo banner existente se houver.");
         }
       }
 
@@ -448,7 +450,7 @@ export default function AprovarEventos() {
         nao_requer_validacao_localizacao: naoRequerValidacaoLocalizacao,
         carga_horaria: cargaHoraria,
         coordenador_id: coordenadorId,
-        banner_url: bannerUrlFinal,
+        banner_url: bannerUrlFinal, // Usa o banner existente ou o novo se houver upload
       };
 
       const { error: updateError } = await supabase

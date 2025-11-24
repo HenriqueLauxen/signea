@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/contexts/ToastContext";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import QRCode from "qrcode";
 import {
   useEvento,
   useInscricoes,
@@ -37,13 +38,36 @@ export default function EventoDetalhes() {
   const [showQRModal, setShowQRModal] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [selectedDia, setSelectedDia] = useState<number>(1);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   // const [statusFilter, setStatusFilter] = useState("todos"); // This state was not used in the original code, keeping it commented out.
 
   const loading = loadingEvento || loadingInscricoes || loadingPresencas || loadingCertificados;
 
-  const handleGerarQR = () => {
-    setShowQRModal(true);
-    toast.success("QR Code gerado com sucesso!");
+  const handleGerarQR = async () => {
+    if (!evento || !evento.codigo_qrcode) {
+      toast.error("Evento não possui código QR Code. Verifique se o evento foi criado corretamente.");
+      return;
+    }
+
+    try {
+      // Gerar QR Code usando o código real do evento (6 dígitos)
+      const url = `${window.location.origin}/registrar-presenca/${evento.codigo_qrcode}`;
+      const qrCodeDataUrl = await QRCode.toDataURL(url, {
+        width: 400,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#ffffff'
+        }
+      });
+
+      setQrCodeUrl(qrCodeDataUrl);
+      setShowQRModal(true);
+      toast.success("QR Code gerado com sucesso!");
+    } catch (error) {
+      console.error('Erro ao gerar QR code:', error);
+      toast.error('Erro ao gerar QR code');
+    }
   };
 
   const handleValidarPagamento = async (pagamentoId: string, novoStatus: 'aprovado' | 'rejeitado') => {
@@ -284,20 +308,36 @@ export default function EventoDetalhes() {
       </Tabs>
 
       {/* Modal QR Code */}
-      <Dialog open={showQRModal} onOpenChange={setShowQRModal}>
+      <Dialog open={showQRModal} onOpenChange={(open) => {
+        setShowQRModal(open);
+        if (!open) {
+          setQrCodeUrl(null);
+          setShowKey(false);
+        }
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>QR Code - Dia {selectedDia}</DialogTitle>
+            <DialogTitle>QR Code do Evento</DialogTitle>
           </DialogHeader>
           <div className="space-y-6 text-center">
-            <div className="w-64 h-64 mx-auto bg-white rounded-lg p-4 flex items-center justify-center">
-              <QrCode className="w-full h-full text-background" />
-            </div>
+            {qrCodeUrl ? (
+              <div className="w-64 h-64 mx-auto bg-white rounded-lg p-4 flex items-center justify-center border">
+                <img 
+                  src={qrCodeUrl} 
+                  alt="QR Code do Evento"
+                  className="w-full h-full"
+                />
+              </div>
+            ) : (
+              <div className="w-64 h-64 mx-auto bg-white rounded-lg p-4 flex items-center justify-center">
+                <QrCode className="w-full h-full text-background" />
+              </div>
+            )}
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Chave do dia:</p>
+              <p className="text-sm text-muted-foreground">Código do QR Code (6 dígitos):</p>
               <div className="flex items-center justify-center gap-2">
                 <p className="text-2xl font-mono tracking-wider">
-                  {showKey ? "ABC123" : "••••••"}
+                  {showKey && evento?.codigo_qrcode ? evento.codigo_qrcode : "••••••"}
                 </p>
                 <Button
                   size="sm"
@@ -310,8 +350,30 @@ export default function EventoDetalhes() {
             </div>
             <div className="p-3 bg-muted rounded-md">
               <p className="text-xs text-muted-foreground mb-1">Link compartilhável:</p>
-              <code className="text-xs">https://signea.app/validar-presenca?e={id}&d={selectedDia}</code>
+              <code className="text-xs break-all">
+                {evento?.codigo_qrcode 
+                  ? `${window.location.origin}/registrar-presenca/${evento.codigo_qrcode}`
+                  : 'Código não disponível'}
+              </code>
             </div>
+            {qrCodeUrl && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const link = document.createElement('a');
+                  link.href = qrCodeUrl;
+                  link.download = `qrcode-${evento?.titulo?.replace(/\s+/g, '-') || 'evento'}.png`;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                  toast.success('QR Code baixado!');
+                }}
+                className="w-full"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Baixar QR Code
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
