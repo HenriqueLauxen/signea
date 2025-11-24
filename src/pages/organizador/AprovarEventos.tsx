@@ -11,7 +11,6 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Upload, Clock, Eye, CheckCircle, Calendar as CalendarIcon, MapPin, Users, Loader2, User, X } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
-import { modal } from "@/contexts/ModalContext";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -27,6 +26,12 @@ interface EventoPendente {
   data_inicio: string;
   data_fim: string;
   local: string;
+  latitude: number | null;
+  longitude: number | null;
+  raio_validacao_metros: number | null;
+  nao_requer_validacao_localizacao: boolean | null;
+  data_encerramento_inscricoes: string | null;
+  coordenador_id: string | null;
   campus: string | null;
   sala: string | null;
   capacidade_maxima: number;
@@ -133,6 +138,76 @@ export default function AprovarEventos() {
     };
   }, []);
 
+  // Preencher campos quando uma solicitação é selecionada e o modal é aberto
+  useEffect(() => {
+    if (selectedSolicitacao && showModal) {
+      // Preencher campos com dados do evento (se existirem)
+      setTipo(selectedSolicitacao.tipo || "");
+      setLocal(selectedSolicitacao.local || "");
+      setCargaHoraria(selectedSolicitacao.carga_horaria || 0);
+      setCoordenadorId(selectedSolicitacao.coordenador_id || "");
+      
+      // Preencher localização se existir
+      if (selectedSolicitacao.latitude && selectedSolicitacao.longitude) {
+        setLatitude(selectedSolicitacao.latitude);
+        setLongitude(selectedSolicitacao.longitude);
+      } else {
+        setLatitude(null);
+        setLongitude(null);
+      }
+      
+      // Preencher raio de validação
+      if (selectedSolicitacao.raio_validacao_metros) {
+        setRaioValidacaoMetros(selectedSolicitacao.raio_validacao_metros);
+      } else {
+        setRaioValidacaoMetros(100);
+      }
+      
+      // Preencher flag de validação de localização
+      if (selectedSolicitacao.nao_requer_validacao_localizacao !== null) {
+        setNaoRequerValidacaoLocalizacao(selectedSolicitacao.nao_requer_validacao_localizacao);
+      } else {
+        setNaoRequerValidacaoLocalizacao(false);
+      }
+      
+      // Preencher data de encerramento de inscrições
+      if (selectedSolicitacao.data_encerramento_inscricoes) {
+        setDataEncerramentoInscricoes(new Date(selectedSolicitacao.data_encerramento_inscricoes));
+      } else {
+        setDataEncerramentoInscricoes(undefined);
+      }
+      
+      // Se já tem banner, mostrar preview
+      if (selectedSolicitacao.banner_url) {
+        setBannerUrl(selectedSolicitacao.banner_url);
+      } else {
+        setBannerUrl("");
+      }
+      setBannerFile(null);
+      
+      // Carregar palestrantes existentes do evento
+      const carregarPalestrantes = async () => {
+        const { data } = await supabase
+          .from('palestrantes')
+          .select('*')
+          .eq('evento_id', selectedSolicitacao.id)
+          .order('ordem');
+        
+        if (data && data.length > 0) {
+          setPalestrantes(data.map(p => ({
+            nome: p.nome,
+            tema: p.tema,
+            descricao: p.descricao || ''
+          })));
+        } else {
+          setPalestrantes([]);
+        }
+      };
+      
+      carregarPalestrantes();
+    }
+  }, [selectedSolicitacao, showModal]);
+
   useEffect(() => {
     // Buscar nomes dos aprovadores
     const buscarNomesAprovadores = async () => {
@@ -163,7 +238,7 @@ export default function AprovarEventos() {
       setLoadingPendentes(true);
       const { data, error } = await supabase
         .from('eventos')
-        .select('*')
+        .select('id, titulo, descricao, tipo, data_inicio, data_fim, local, latitude, longitude, raio_validacao_metros, nao_requer_validacao_localizacao, data_encerramento_inscricoes, coordenador_id, campus, sala, capacidade_maxima, organizador_email, organizador_nome, carga_horaria, gera_certificado, banner_url, categoria, valor, created_at')
         .eq('status', 'pendente')
         .order('created_at', { ascending: false });
 
@@ -535,40 +610,29 @@ export default function AprovarEventos() {
             <div className="space-y-3 max-h-[calc(100vh-300px)] overflow-y-auto scrollbar-hide">
               {eventosPendentes.map((evento) => (
                 <Card key={evento.id} className="p-4 hover:glow-border-hover transition-all">
-                  <div className="space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-base font-normal truncate">{evento.titulo}</h3>
-                        <Badge variant="outline" className="gap-1 mt-1 text-xs">
-                          <Clock className="w-3 h-3" />
-                          Pendente
-                        </Badge>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedSolicitacao(evento);
-                          setShowModal(true);
-                        }}
-                        className="shrink-0"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    <div className="text-xs text-muted-foreground space-y-1">
-                      <p className="truncate">Por: {evento.organizador_nome || evento.organizador_email}</p>
-                      <p className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {format(new Date(evento.data_inicio), "dd/MM/yyyy", { locale: ptBR })}
+                  <div className="space-y-3">
+                    <div>
+                      <h3 className="text-base font-normal mb-2">{evento.titulo}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        <User className="w-3 h-3 inline mr-1" />
+                        {evento.organizador_nome || evento.organizador_email}
                       </p>
-                      {evento.campus && (
-                        <p className="flex items-center gap-1 truncate">
-                          <MapPin className="w-3 h-3" />
-                          {evento.campus}
-                        </p>
-                      )}
+                      <p className="text-sm text-muted-foreground mt-1">
+                        <MapPin className="w-3 h-3 inline mr-1" />
+                        {evento.local || evento.campus || "Localização não informada"}
+                      </p>
                     </div>
+                    <Button
+                      variant="elegant"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedSolicitacao(evento);
+                        setShowModal(true);
+                      }}
+                      className="w-full"
+                    >
+                      Analisar Aprovação
+                    </Button>
                   </div>
                 </Card>
               ))}
@@ -941,4 +1005,5 @@ export default function AprovarEventos() {
     </div>
   );
 }
+
 
