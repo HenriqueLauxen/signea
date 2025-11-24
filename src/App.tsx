@@ -58,7 +58,12 @@ const App = () => (
           <ModalProvider>
             <ModalListener />
             <TooltipProvider>
-              <BrowserRouter>
+              <BrowserRouter
+                future={{
+                  v7_startTransition: true,
+                  v7_relativeSplatPath: true,
+                }}
+              >
                 <Routes>
                   {/* Public Routes */}
                   <Route path="/" element={<Home />} />

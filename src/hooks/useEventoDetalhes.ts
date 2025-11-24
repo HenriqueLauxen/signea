@@ -25,12 +25,11 @@ export function useInscricoes(eventoId: string | undefined) {
         queryKey: ["inscricoes", eventoId],
         queryFn: async () => {
             if (!eventoId) return [];
-            const { data, error } = await supabase
+            const { data, error} = await supabase
                 .from("inscricoes")
                 .select(`
           *,
-          usuarios:user_id(nome_completo, matricula),
-          pagamentos(id, status, valor)
+          usuarios:usuario_email(nome_completo, matricula)
         `)
                 .eq("evento_id", eventoId);
 
@@ -39,7 +38,6 @@ export function useInscricoes(eventoId: string | undefined) {
             return (data || []).map((item: any) => ({
                 ...item,
                 usuarios: Array.isArray(item.usuarios) ? item.usuarios[0] : item.usuarios,
-                pagamentos: Array.isArray(item.pagamentos) ? item.pagamentos[0] : item.pagamentos,
             }));
         },
         enabled: !!eventoId,

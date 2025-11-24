@@ -65,7 +65,6 @@ export default function Presencas() {
       setEventos(eventosData || []);
 
       if (!eventosData || eventosData.length === 0) {
-        toast.info('Você ainda não criou nenhum evento');
         setPresencas([]);
         setLoading(false);
         return;

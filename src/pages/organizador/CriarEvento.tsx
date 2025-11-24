@@ -204,13 +204,6 @@ export default function CriarEvento() {
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
       const filePath = `banners/${fileName}`;
 
-      console.log('Tentando fazer upload:', {
-        bucket: 'eventos',
-        filePath,
-        fileSize: bannerFile.size,
-        fileType: bannerFile.type
-      });
-
       const { data, error: uploadError } = await supabase.storage
         .from('eventos')
         .upload(filePath, bannerFile, {
@@ -219,17 +212,13 @@ export default function CriarEvento() {
         });
 
       if (uploadError) {
-        console.error('Erro detalhado do upload:', uploadError);
+        console.error('Erro ao fazer upload do banner:', uploadError);
         throw uploadError;
       }
-
-      console.log('Upload bem-sucedido:', data);
 
       const { data: { publicUrl } } = supabase.storage
         .from('eventos')
         .getPublicUrl(filePath);
-
-      console.log('URL pública gerada:', publicUrl);
 
       return publicUrl;
     } catch (error) {
@@ -340,12 +329,11 @@ export default function CriarEvento() {
       const aprovadorEmail = isOrganizador ? null : undefined;
       const dataAprovacao = isOrganizador ? new Date().toISOString() : undefined;
 
-      // Debug: verificar status do evento
-      console.log('🔍 Criando evento:', {
-        isOrganizador,
-        perfil: userData?.perfil,
-        statusEvento
-      });
+      // Validar data de encerramento das inscrições
+      let dataEncerramentoValidada = dataEncerramentoInscricoes;
+      if (dataEncerramentoInscricoes && dataEncerramentoInscricoes > dateRange.from) {
+        dataEncerramentoValidada = dateRange.from;
+      }
 
       // Criar evento
       const { data: evento, error } = await supabase
@@ -372,7 +360,7 @@ export default function CriarEvento() {
           banner_url: bannerUrlFinal,
           categoria: categoria?.trim() || null,
           publico_alvo_perfil: publicoAlvoPerfil || 'aluno',
-          data_encerramento_inscricoes: dataEncerramentoInscricoes ? dataEncerramentoInscricoes.toISOString() : null,
+          data_encerramento_inscricoes: dataEncerramentoValidada ? dataEncerramentoValidada.toISOString() : null,
           nao_requer_validacao_localizacao: naoRequerValidacaoLocalizacao,
           gera_certificado: true,
           status: statusEvento,
@@ -383,16 +371,9 @@ export default function CriarEvento() {
         .single();
 
       if (error) {
-        console.error('❌ Erro do Supabase:', error);
+        console.error('Erro do Supabase ao criar evento:', error);
         throw new Error(error.message);
       }
-
-      // Debug: verificar se evento foi criado com status correto
-      console.log('✅ Evento criado:', {
-        id: evento?.id,
-        titulo: evento?.titulo,
-        status: evento?.status
-      });
 
       // Salvar palestrantes na tabela relacionada
       if (palestrantes.length > 0 && evento) {

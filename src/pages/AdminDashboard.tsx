@@ -218,9 +218,6 @@ const AdminDashboard = () => {
       {/* Modal Criar Evento */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Criar Novo Evento</DialogTitle>
-          </DialogHeader>
           <div className="space-y-4">
             <Input placeholder="Nome do evento" className="bg-transparent border-border" />
             <Input placeholder="Carga horária (horas)" type="number" className="bg-transparent border-border" />
