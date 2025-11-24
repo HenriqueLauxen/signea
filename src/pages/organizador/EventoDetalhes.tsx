@@ -15,6 +15,7 @@ import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import QRCode from "qrcode";
+import { getRouteUrl } from "@/lib/config";
 import {
   useEvento,
   useInscricoes,
@@ -56,7 +57,7 @@ export default function EventoDetalhes() {
 
     try {
       // Gerar QR Code usando o código real do evento (6 dígitos)
-      const url = `${window.location.origin}/registrar-presenca/${evento.codigo_qrcode}`;
+      const url = getRouteUrl(`/registrar-presenca/${evento.codigo_qrcode}`);
       const qrCodeDataUrl = await QRCode.toDataURL(url, {
         width: 400,
         margin: 2,
@@ -666,7 +667,7 @@ export default function EventoDetalhes() {
               <p className="text-xs text-muted-foreground mb-1">Link compartilhável:</p>
               <code className="text-xs break-all">
                 {evento?.codigo_qrcode 
-                  ? `${window.location.origin}/registrar-presenca/${evento.codigo_qrcode}`
+                  ? getRouteUrl(`/registrar-presenca/${evento.codigo_qrcode}`)
                   : 'Código não disponível'}
               </code>
             </div>
