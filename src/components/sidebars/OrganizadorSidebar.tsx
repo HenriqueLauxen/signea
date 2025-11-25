@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from "react";
 import { NavLink } from "@/components/NavLink";
 import {
   Calendar,
@@ -26,7 +27,23 @@ const menuItems = [
 
 export function OrganizadorSidebar() {
   const { minimizado, toggleMinimizado } = useSidebarMinimized();
-
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [canShow, setCanShow] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const { data: { session } } = await import("@/lib/supabase").then(m => m.supabase.auth.getSession());
+      setUserEmail(session?.user?.email || null);
+    })();
+  }, []);
+  useEffect(() => {
+    if (userEmail) {
+      import("@/lib/menuPermissions").then(({ getUserMenuPermissions }) => {
+        const perms = getUserMenuPermissions(userEmail);
+        setCanShow(perms.organizador);
+      });
+    }
+  }, [userEmail]);
+  if (!canShow) return null;
   return (
     <aside className={`${minimizado ? 'w-16' : 'w-64'} border-r border-border bg-card/30 backdrop-blur-sm flex flex-col transition-all duration-300 relative`}>
       <div className={`${minimizado ? 'p-4' : 'p-6'} flex items-center gap-3`}>

@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from "react";
 import { NavLink } from "@/components/NavLink";
 import {
   Building,
@@ -19,9 +20,31 @@ const menuItems = [
   { path: "/campus/coordenadores", label: "Coordenadores", icon: UserCog },
 ];
 
+const perfilOptions = [
+  { key: "usuario", label: "Aluno" },
+  { key: "organizador", label: "Organizador" },
+  { key: "campus", label: "Admin" },
+];
+
 export function CampusSidebar() {
   const { minimizado, toggleMinimizado } = useSidebarMinimized();
-
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [canShow, setCanShow] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const { data: { session } } = await import("@/lib/supabase").then(m => m.supabase.auth.getSession());
+      setUserEmail(session?.user?.email || null);
+    })();
+  }, []);
+  useEffect(() => {
+    if (userEmail) {
+      import("@/lib/menuPermissions").then(({ getUserMenuPermissions }) => {
+        const perms = getUserMenuPermissions(userEmail);
+        setCanShow(perms.campus);
+      });
+    }
+  }, [userEmail]);
+  if (!canShow) return null;
   return (
     <aside className={`${minimizado ? 'w-16' : 'w-64'} border-r border-border bg-card/30 backdrop-blur-sm flex flex-col transition-all duration-300 relative`}>
       <div className={`${minimizado ? 'p-4' : 'p-6'} flex items-center gap-3`}>
@@ -77,5 +100,44 @@ export function CampusSidebar() {
         </button>
       </div>
     </aside>
+  );
+}
+
+export function PerfilDropdownMenu({ userEmail }: { userEmail: string }) {
+  const [perms, setPerms] = useState<{ usuario: boolean; organizador: boolean; campus: boolean }>({
+    usuario: false,
+    organizador: false,
+    campus: false,
+  });
+
+  useEffect(() => {
+    import("@/lib/menuPermissions").then(({ getUserMenuPermissions }) => {
+      setPerms(getUserMenuPermissions(userEmail));
+    });
+  }, [userEmail]);
+
+  // Só renderiza se tiver pelo menos uma permissão
+  const hasAnyPerm = perms.usuario || perms.organizador || perms.campus;
+  if (!hasAnyPerm) return null;
+
+  return (
+    <div>
+      <div className="px-2 py-1.5 text-sm font-semibold">Mudar Perfil</div>
+      <div role="separator" aria-orientation="horizontal" className="-mx-1 my-1 h-px bg-muted"></div>
+      {perfilOptions.map(opt =>
+        perms[opt.key] ? (
+          <div
+            key={opt.key}
+            role="menuitem"
+            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground gap-2"
+            tabIndex={-1}
+            data-orientation="vertical"
+            data-radix-collection-item=""
+          >
+            {opt.label}
+          </div>
+        ) : null
+      )}
+    </div>
   );
 }

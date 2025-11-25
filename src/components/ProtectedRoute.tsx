@@ -5,6 +5,7 @@ import { startSessionMonitoring, clearSessionCache } from "@/lib/sessionManager"
 
 type ProtectedRouteProps = {
   children: ReactNode;
+  requiredMenu?: "usuario" | "organizador" | "campus";
 };
 
 /**
@@ -14,64 +15,70 @@ type ProtectedRouteProps = {
  * - Se não tiver sessão, redireciona para /login
  * - Se tiver sessão, renderiza o conteúdo normalmente
  */
-export function ProtectedRoute({ children }: ProtectedRouteProps) {
+export function ProtectedRoute(props: ProtectedRouteProps) {
+  const { children, requiredMenu } = props;
   const navigate = useNavigate();
   const location = useLocation();
-
-  // undefined = ainda carregando sessão
-  // null      = sem sessão
-  // objeto    = sessão válida
   const [session, setSession] = useState<any | null | undefined>(undefined);
+  const [email, setEmail] = useState<string | null>(null);
+  const [permChecked, setPermChecked] = useState(false);
+  const [hasPerm, setHasPerm] = useState(true);
 
   useEffect(() => {
     let mounted = true;
     let stopMonitoring: (() => void) | undefined;
-
     const hydrateSession = async () => {
       const { data, error } = await supabase.auth.getSession();
       if (!mounted) return;
-
       const currentSession = error ? null : data?.session ?? null;
       setSession(currentSession);
-
-      // Se tem sessão válida, inicia monitoramento em background
+      setEmail(currentSession?.user?.email || null);
       if (currentSession && !stopMonitoring) {
         stopMonitoring = startSessionMonitoring();
       }
     };
-
-    // Carrega sessão uma vez ao montar
     hydrateSession();
-
-    // Escuta mudanças globais de autenticação (login/logout/refresh)
     const { data } = supabase.auth.onAuthStateChange(
       (event, newSession) => {
         if (!mounted) return;
-
         if (event === "SIGNED_OUT") {
-          // Logout global: limpa sessão e cache
           setSession(null);
+          setEmail(null);
           clearSessionCache();
           if (stopMonitoring) {
             stopMonitoring();
             stopMonitoring = undefined;
           }
         } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-          // Login/refresh: atualiza sessão e garante monitoramento
           setSession(newSession);
+          setEmail(newSession?.user?.email || null);
           if (newSession && !stopMonitoring) {
             stopMonitoring = startSessionMonitoring();
           }
         }
       }
     );
-
     return () => {
       mounted = false;
       data.subscription.unsubscribe();
       if (stopMonitoring) stopMonitoring();
     };
   }, []);
+
+  useEffect(() => {
+    // Corrigir escopo: usar a prop corretamente
+    const menu = requiredMenu;
+    if (!menu || !email) {
+      setPermChecked(true);
+      setHasPerm(true);
+      return;
+    }
+    import("@/lib/menuPermissions").then(({ getUserMenuPermissions }) => {
+      const perms = getUserMenuPermissions(email);
+      setHasPerm(perms[menu]);
+      setPermChecked(true);
+    });
+  }, [requiredMenu, email]);
 
   // Se detectamos claramente que NÃO há sessão, manda para /login
   useEffect(() => {
@@ -94,5 +101,13 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   // Sessão válida → renderiza conteúdo protegido
-  return <>{children}</>;
+    if (requiredMenu && permChecked && !hasPerm) {
+      return (
+        <div style={{ padding: 32, textAlign: "center" }}>
+          <h2 style={{ fontSize: 24, color: "#e53e3e" }}>Acesso negado</h2>
+          <p style={{ marginTop: 16 }}>Você não tem permissão para acessar este menu.</p>
+        </div>
+      );
+    }
+    return <>{children}</>;
 }
