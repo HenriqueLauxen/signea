@@ -290,7 +290,8 @@ export default function Certificados() {
                     onClick={() => {
                       const hash = cert.hash_sha256 || cert.codigo_validacao;
                       if (hash) {
-                        window.location.href = `/certificado/${hash}`;
+                        const url = `/certificado/${hash}`;
+                        window.open(url, '_blank');
                       } else {
                         toast.error("Hash do certificado não disponível");
                       }

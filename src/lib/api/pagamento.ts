@@ -49,3 +49,32 @@ export const confirmarPagamento = async (inscricaoId: string): Promise<{ success
   }
 };
 
+export const createPixCharge = async (
+  params: { inscricaoId: string; valor: number; descricao?: string }
+): Promise<{ qrCodeDataUrl: string; providerChargeId: string }> => {
+  const baseUrl = import.meta.env.VITE_PAYMENTS_API_URL;
+  if (!baseUrl) {
+    throw new Error('PAYMENTS_API_URL not configured');
+  }
+  const res = await fetch(`${baseUrl}/pix/charge`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      txid: params.inscricaoId,
+      valor: params.valor,
+      descricao: params.descricao || 'Inscricao evento'
+    })
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`PIX charge failed: ${text}`);
+  }
+  const data = await res.json();
+  return {
+    qrCodeDataUrl: data.qrCodeDataUrl || data.qr_code_data_url || '',
+    providerChargeId: data.chargeId || data.id || ''
+  };
+};
+

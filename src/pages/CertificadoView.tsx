@@ -233,8 +233,8 @@ export default function CertificadoView() {
 
       {/* Certificado */}
       <div className="max-w-4xl mx-auto p-6 print:p-0">
-        <div className="bg-white print:bg-white p-10 print:p-6">
-          <div className="space-y-8 print:space-y-4">
+        <div className="bg-white print:bg-white p-10 print:p-6 cert-sheet">
+          <div className="space-y-8 print:space-y-4 cert-content">
             {/* Cabeçalho com Logo */}
             <div className="flex items-center justify-center gap-8 print:gap-6 pb-6 print:pb-3">
               <img
@@ -313,6 +313,11 @@ export default function CertificadoView() {
                   <code className="text-xs print:text-[10px] font-mono text-black break-all block">
                     {certificado.hash_sha256 || "N/A"}
                   </code>
+                  {qrCodeUrl && (
+                    <p className="text-[11px] print:text-[10px] text-black mt-1 font-light break-all">
+                      {getRouteUrl(`/certificados/${certificado.hash_sha256 || sha256}`)}
+                    </p>
+                  )}
                 </div>
                 {qrCodeUrl && (
                   <div className="flex-shrink-0 text-center">
@@ -343,6 +348,28 @@ export default function CertificadoView() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
         
+        .cert-sheet {
+          position: relative;
+          border: 6px double #0a0a0a;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.10);
+        }
+        .cert-sheet::before {
+          content: 'IFFAR';
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 9rem;
+          font-weight: 700;
+          letter-spacing: 0.5rem;
+          color: #000;
+          opacity: 0.04;
+          transform: rotate(-18deg);
+          pointer-events: none;
+        }
+        .cert-content { position: relative; z-index: 1; }
+
         @media print {
           @page {
             size: A4 landscape;
@@ -358,6 +385,17 @@ export default function CertificadoView() {
             padding: 0 !important;
             font-family: 'Inter', 'Segoe UI', system-ui, sans-serif !important;
           }
+          .cert-sheet { border-color: #000; box-shadow: none; }
+          .cert-sheet::before { opacity: 0.06; }
+          .cert-sheet { 
+            width: calc(29.7cm - 3cm);
+            height: calc(21cm - 2.4cm);
+            box-sizing: border-box;
+            overflow: hidden;
+            page-break-inside: avoid;
+          }
+          .cert-content { page-break-inside: avoid; }
+          img, h1, h2, h3, p, code, div { page-break-inside: avoid; }
           .print\\:bg-white {
             background: white !important;
           }

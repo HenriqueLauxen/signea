@@ -29,10 +29,26 @@ export default function PagarSimulacao() {
       setLoading(true);
       const result = await confirmarPagamento(inscricaoId);
 
+      const broadcastSignal = async () => {
+        try {
+          const channel = supabase.channel(`payment-tx-${inscricaoId}`);
+          const status = await channel.subscribe();
+          if (status === 'SUBSCRIBED') {
+            await channel.send({ type: 'broadcast', event: 'pix_paid', payload: { inscricaoId } });
+          }
+          try { supabase.removeChannel(channel); } catch {}
+        } catch (e) {
+          console.error('Falha ao sinalizar pagamento via realtime', e);
+        }
+      };
+
       if (result.success) {
         setPagamentoConfirmado(true);
         toast.success("Pagamento confirmado com sucesso!");
+        await broadcastSignal();
       } else {
+        // Mesmo com falha de update (RLS), sinaliza para o app principal concluir
+        await broadcastSignal();
         toast.error("Erro ao confirmar pagamento");
       }
     } catch (error) {

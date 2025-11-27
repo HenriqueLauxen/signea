@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import QRCode from "qrcode";
+import { gerarPayloadPix, gerarQrCodePixDataUrl } from "@/lib/pix";
 import { getPagamentoStatus } from "@/lib/api/pagamento";
 import { getRouteUrl } from "@/lib/config";
 
@@ -31,6 +32,7 @@ interface Evento {
   valor: number | null;
   inscrito?: boolean;
   pagamento_status?: 'pago' | 'pendente' | null;
+  inscricao_pendente?: boolean;
   publico_alvo_perfil?: string;
   cursos?: Array<{ id: string; nome: string }>;
   palestrantes?: Array<{ nome: string; tema: string; descricao: string }>;
@@ -57,6 +59,41 @@ export default function Eventos() {
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [aguardandoPagamento, setAguardandoPagamento] = useState(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const realtimeChannelRef = useRef<any | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'SIMULACAO'>(
+    (import.meta.env.VITE_PIX_KEY ? 'PIX' : 'SIMULACAO')
+  );
+  
+  useEffect(() => {
+    if (!userEmail) return;
+    if (realtimeChannelRef.current) {
+      try { supabase.removeChannel(realtimeChannelRef.current); } catch {}
+      realtimeChannelRef.current = null;
+    }
+    const channel = supabase
+      .channel(`inscricoes-user-${userEmail}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'inscricoes',
+        filter: `usuario_email=eq.${userEmail}`
+      }, (payload: any) => {
+        const novo = payload?.new;
+        if (novo && (novo.pagamento_status === 'pago' || novo.status === 'confirmada')) {
+          console.log('Realtime (user) pagamento confirmado', { inscricaoId: novo.id });
+          toast.success("Pagamento confirmado! Inscrição atualizada.");
+          carregarEventos();
+        }
+      })
+      .subscribe();
+    realtimeChannelRef.current = channel;
+    return () => {
+      if (realtimeChannelRef.current) {
+        try { supabase.removeChannel(realtimeChannelRef.current); } catch {}
+        realtimeChannelRef.current = null;
+      }
+    };
+  }, [userEmail, toast]);
 
   const carregarEventos = useCallback(async () => {
     if (!userEmail) {
@@ -149,6 +186,11 @@ export default function Eventos() {
 
         // Mapa de status de pagamento por evento
         const pagamentosPorEvento = new Map<string, 'pago' | 'pendente' | null>();
+        const pendentesIds = new Set(
+          inscricoes
+            ?.filter(i => i.status === 'pendente')
+            .map(i => i.evento_id) || []
+        );
         inscricoes?.forEach(inscricao => {
           if (inscricao.status === 'confirmada') {
             pagamentosPorEvento.set(inscricao.evento_id, inscricao.pagamento_status as 'pago' | 'pendente' | null);
@@ -199,6 +241,7 @@ export default function Eventos() {
           ...evento,
           inscrito: inscritosIds.has(evento.id),
           pagamento_status: pagamentosPorEvento.get(evento.id) || null,
+          inscricao_pendente: pendentesIds.has(evento.id),
           palestrantes: evento.palestrantes || [],
           coordenador: evento.coordenador_id || null
         }));
@@ -275,6 +318,10 @@ export default function Eventos() {
       clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
     }
+    if (realtimeChannelRef.current) {
+      try { supabase.removeChannel(realtimeChannelRef.current); } catch {}
+      realtimeChannelRef.current = null;
+    }
     
     // Limpar estados de pagamento
     setAguardandoPagamento(false);
@@ -301,9 +348,65 @@ export default function Eventos() {
 
     try {
       setInscrevendo(true);
+      console.log('Inscrição iniciada', { eventoId: eventoSelecionado.id, userEmail });
 
       // Verificar se o evento é pago
       const eventoPago = eventoSelecionado.valor && eventoSelecionado.valor > 0;
+
+      const { data: existente } = await supabase
+        .from('inscricoes')
+        .select('id, status')
+        .eq('evento_id', eventoSelecionado.id)
+        .eq('usuario_email', userEmail)
+        .single();
+
+      if (existente) {
+        console.log('Inscrição existente encontrada', existente);
+        if (existente.status === 'pendente') {
+          const inscricaoId = existente.id as string;
+          setInscricaoPendenteId(inscricaoId);
+          setAguardandoPagamento(true);
+          try {
+            const apiUrl = import.meta.env.VITE_PAYMENTS_API_URL;
+            const pixKey = import.meta.env.VITE_PIX_KEY || '';
+            if (paymentMethod === 'PIX') {
+              if (apiUrl && eventoSelecionado.valor) {
+                const charge = await createPixCharge({ inscricaoId, valor: eventoSelecionado.valor });
+                setQrCodeUrl(charge.qrCodeDataUrl);
+              } else {
+                if (!pixKey) {
+                  toast.error('Chave PIX não configurada');
+                  throw new Error('PIX key missing');
+                }
+                const payload = gerarPayloadPix({
+                  chave: pixKey,
+                  nome: 'IFFarroupilha',
+                  cidade: 'Santa Maria',
+                  valor: eventoSelecionado.valor || 0,
+                  txid: inscricaoId,
+                });
+                const dataUrl = await gerarQrCodePixDataUrl(payload);
+                setQrCodeUrl(dataUrl);
+              }
+            } else {
+              const url = getRouteUrl(`/pagar-simulacao?id=${inscricaoId}`);
+              const qrCodeDataUrl = await QRCode.toDataURL(url, { width: 300 });
+              setQrCodeUrl(qrCodeDataUrl);
+            }
+          } catch (qrError) {
+            console.error('Erro ao gerar QRCode para existente pendente', qrError);
+          }
+          iniciarPollingPagamento(inscricaoId);
+          assinarSinalPagamento(inscricaoId);
+          assinarRealtimePagamento(inscricaoId);
+          return;
+        }
+        if (existente.status === 'confirmada') {
+          toast.info('Você já está inscrito neste evento');
+          setShowModal(false);
+          return;
+        }
+      }
 
       const { data: inscricaoData, error } = await supabase
         .from('inscricoes')
@@ -317,6 +420,7 @@ export default function Eventos() {
         .single();
 
       if (error) throw error;
+      console.log('Inscrição criada', inscricaoData);
 
       // Se for evento pago, mostrar QRCode e iniciar polling
       if (eventoPago && inscricaoData) {
@@ -324,18 +428,36 @@ export default function Eventos() {
         setInscricaoPendenteId(inscricaoId);
         setAguardandoPagamento(true);
         
-        // Gerar QRCode
-        const url = getRouteUrl(`/pagar-simulacao?id=${inscricaoId}`);
         try {
-          const qrCodeDataUrl = await QRCode.toDataURL(url, { width: 300 });
-          setQrCodeUrl(qrCodeDataUrl);
+          const apiUrl = import.meta.env.VITE_PAYMENTS_API_URL;
+          const pixKey = import.meta.env.VITE_PIX_KEY || '';
+          if (apiUrl && eventoSelecionado.valor) {
+            const charge = await createPixCharge({ inscricaoId, valor: eventoSelecionado.valor });
+            setQrCodeUrl(charge.qrCodeDataUrl);
+          } else if (pixKey && eventoSelecionado.valor) {
+            const payload = gerarPayloadPix({
+              chave: pixKey,
+              nome: 'IFFarroupilha',
+              cidade: 'Santa Maria',
+              valor: eventoSelecionado.valor,
+              txid: inscricaoId,
+            });
+            const dataUrl = await gerarQrCodePixDataUrl(payload);
+            setQrCodeUrl(dataUrl);
+          } else {
+            const url = getRouteUrl(`/pagar-simulacao?id=${inscricaoId}`);
+            const qrCodeDataUrl = await QRCode.toDataURL(url, { width: 300 });
+            setQrCodeUrl(qrCodeDataUrl);
+          }
         } catch (qrError) {
           console.error('Erro ao gerar QRCode:', qrError);
           toast.error('Erro ao gerar QRCode');
         }
 
-        // Iniciar polling
+        // Iniciar polling e realtime
         iniciarPollingPagamento(inscricaoId);
+        assinarSinalPagamento(inscricaoId);
+        assinarRealtimePagamento(inscricaoId);
       } else {
         // Evento gratuito - finalizar normalmente
         toast.success("Inscrição realizada com sucesso!");
@@ -346,7 +468,7 @@ export default function Eventos() {
     } catch (error: any) {
       console.error('Erro ao realizar inscrição:', error);
       if (error.code === '23505') {
-        toast.error('Você já está inscrito neste evento');
+        toast.error('Já existe uma inscrição para este evento');
       } else {
         toast.error('Erro ao realizar inscrição');
       }
@@ -365,6 +487,7 @@ export default function Eventos() {
     pollingIntervalRef.current = setInterval(async () => {
       try {
         const { status } = await getPagamentoStatus(inscricaoId);
+        console.log('Polling pagamento', { inscricaoId, status, ts: new Date().toISOString() });
         
         if (status === 'pago') {
           // Pagamento confirmado!
@@ -378,6 +501,7 @@ export default function Eventos() {
           setQrCodeUrl(null);
           
           toast.success("Pagamento confirmado! Inscrição realizada com sucesso!");
+          console.log('Pagamento confirmado', { inscricaoId });
           setShowModal(false);
           setEventoSelecionado(null);
           carregarEventos();
@@ -386,6 +510,39 @@ export default function Eventos() {
         console.error('Erro ao verificar status do pagamento:', error);
       }
     }, 2000); // 2 segundos
+  };
+
+  const assinarRealtimePagamento = (inscricaoId: string) => {
+    if (realtimeChannelRef.current) {
+      try { supabase.removeChannel(realtimeChannelRef.current); } catch {}
+      realtimeChannelRef.current = null;
+    }
+    const channel = supabase
+      .channel(`inscricao-pagamento-${inscricaoId}`)
+      .on('postgres_changes', {
+        event: 'update',
+        schema: 'public',
+        table: 'inscricoes',
+        filter: `id=eq.${inscricaoId}`
+      }, (payload: any) => {
+        const novo = payload?.new;
+        console.log('Realtime pagamento update', { inscricaoId, novo });
+        if (novo && (novo.pagamento_status === 'pago' || novo.status === 'confirmada')) {
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          setAguardandoPagamento(false);
+          setInscricaoPendenteId(null);
+          setQrCodeUrl(null);
+          toast.success("Pagamento confirmado! Inscrição realizada com sucesso!");
+          setShowModal(false);
+          setEventoSelecionado(null);
+          carregarEventos();
+        }
+      })
+      .subscribe();
+    realtimeChannelRef.current = channel;
   };
 
   // Limpar polling quando o modal fechar
@@ -579,10 +736,20 @@ export default function Eventos() {
                     <Users className="w-4 h-4" />
                     {evento.vagas_disponiveis} vagas disponíveis
                   </div>
-                  {evento.valor && evento.valor > 0 && (
+                  {evento.valor && evento.valor > 0 ? (
                     <div className="flex items-center gap-2">
                       <DollarSign className="w-4 h-4" />
                       R$ {evento.valor.toFixed(2).replace('.', ',')}
+                      {evento.inscrito && evento.pagamento_status === 'pago' ? (
+                        <Badge variant="default" className="text-xs">Pago</Badge>
+                      ) : evento.inscricao_pendente ? (
+                        <Badge variant="outline" className="text-xs">Pendente</Badge>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      <Badge variant="secondary" className="text-xs">Gratuito</Badge>
                     </div>
                   )}
                 </div>
@@ -638,12 +805,17 @@ export default function Eventos() {
                         handleEventClick(evento);
                       }}
                       className="flex-1"
-                      disabled={evento.inscrito || evento.vagas_disponiveis === 0 || inscricoesEncerradas(evento)}
+                      disabled={(evento.inscrito) || evento.vagas_disponiveis === 0 || inscricoesEncerradas(evento)}
                     >
                       {evento.inscrito ? (
                         <>
                           <CheckCircle className="w-4 h-4 mr-2" />
                           Já Inscrito
+                        </>
+                      ) : evento.inscricao_pendente ? (
+                        <>
+                          <DollarSign className="w-4 h-4 mr-2" />
+                          Concluir Pagamento
                         </>
                       ) : (
                         <>
@@ -1016,35 +1188,58 @@ export default function Eventos() {
                     Cancelar
                   </Button>
                 </div>
-              ) : (
-                <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowModal(false)}
-                    className="flex-1"
-                    disabled={inscrevendo}
-                  >
-                    Cancelar
-                  </Button>
-                  {!inscricoesEncerradas(eventoSelecionado) && categorizarEvento(eventoSelecionado) === 'proximos' && (
+          ) : (
+            <div className="flex flex-col sm:flex-row gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowModal(false)}
+                className="flex-1"
+                disabled={inscrevendo}
+              >
+                Cancelar
+              </Button>
+              {!inscricoesEncerradas(eventoSelecionado) && categorizarEvento(eventoSelecionado) === 'proximos' && (
+                <Button
+                  variant="elegant"
+                  onClick={confirmarInscricao}
+                  className="flex-1"
+                  disabled={inscrevendo}
+                >
+                  {inscrevendo ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Confirmando...
+                    </>
+                  ) : (
+                    'Confirmar Inscrição'
+                  )}
+                </Button>
+              )}
+              {eventoSelecionado.valor && eventoSelecionado.valor > 0 && (
+                <div className="flex flex-col gap-2 w-full pt-2">
+                  <label className="text-xs text-muted-foreground">Método de pagamento</label>
+                  <div className="grid grid-cols-2 gap-2">
                     <Button
-                      variant="elegant"
-                      onClick={confirmarInscricao}
-                      className="flex-1"
-                      disabled={inscrevendo}
+                      variant={paymentMethod === 'PIX' ? 'elegant' : 'outline'}
+                      onClick={() => setPaymentMethod('PIX')}
+                      disabled={!import.meta.env.VITE_PIX_KEY}
                     >
-                      {inscrevendo ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Confirmando...
-                        </>
-                      ) : (
-                        'Confirmar Inscrição'
-                      )}
+                      PIX
                     </Button>
+                    <Button
+                      variant={paymentMethod === 'SIMULACAO' ? 'elegant' : 'outline'}
+                      onClick={() => setPaymentMethod('SIMULACAO')}
+                    >
+                      Simulação
+                    </Button>
+                  </div>
+                  {!import.meta.env.VITE_PIX_KEY && paymentMethod === 'PIX' && (
+                    <p className="text-xs text-destructive">Chave PIX não configurada</p>
                   )}
                 </div>
               )}
+            </div>
+          )}
             </div>
           )}
         </DialogContent>

@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { isValidInstitutionalEmail, getEmailValidationErrorMessage } from "@/lib/emailValidation";
 
 const Cadastro = () => {
   const navigate = useNavigate();
@@ -155,8 +156,8 @@ const Cadastro = () => {
     }
 
     // Validar e-mail institucional
-    if (!formData.email.endsWith("@iffar.edu.br") && !formData.email.endsWith("@aluno.iffar.edu.br")) {
-      setErrorMessage("Use um e-mail institucional válido (@iffar.edu.br ou @aluno.iffar.edu.br)");
+    if (!isValidInstitutionalEmail(formData.email)) {
+      setErrorMessage(getEmailValidationErrorMessage());
       setShowError(true);
       return;
     }
@@ -350,14 +351,14 @@ const Cadastro = () => {
                 <label className="text-sm font-medium text-foreground">E-mail Institucional</label>
                 <Input
                   type="email"
-                  placeholder="seu.email@aluno.iffar.edu.br"
+                  placeholder="seu.email@iffarroupilha.edu.br"
                   value={formData.email}
                   onChange={(e) => handleInputChange("email", e.target.value)}
                   className="h-12 bg-transparent border-border focus:glow-border-hover"
                   disabled={loading}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Use @iffar.edu.br ou @aluno.iffar.edu.br
+                  Use @iffarroupilha.edu.br ou @aluno.iffar.edu.br
                 </p>
               </div>
 

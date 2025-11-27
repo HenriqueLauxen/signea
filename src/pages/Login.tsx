@@ -88,8 +88,8 @@ const Login = () => {
 
       if (isEmail) {
         // Validação de domínios permitidos
-        if (!emailOrMatricula.endsWith("@iffar.edu.br") && !emailOrMatricula.endsWith("@aluno.iffar.edu.br")) {
-          setErrorMessage("Use um e-mail institucional (@iffar.edu.br ou @aluno.iffar.edu.br)");
+        if (!emailOrMatricula.endsWith("@iffarroupilha.edu.br") && !emailOrMatricula.endsWith("@aluno.iffar.edu.br")) {
+          setErrorMessage("Use um e-mail institucional (@iffarroupilha.edu.br ou @aluno.iffar.edu.br)");
           setShowError(true);
           setLoading(false);
           return;
