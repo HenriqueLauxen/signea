@@ -120,25 +120,23 @@ export default function Eventos() {
       let query = supabase
         .from('eventos')
         .select(`
-          id, 
-          titulo, 
-          banner_url, 
+          id,
+          titulo,
+          banner_url,
           tipo,
-          data_inicio, 
-          data_fim, 
-          data_encerramento_inscricoes, 
-          carga_horaria, 
-          local, 
+          data_inicio,
+          data_fim,
+          data_encerramento_inscricoes,
+          carga_horaria,
+          local,
           campus,
           sala,
-          descricao, 
-          vagas_disponiveis, 
-          valor, 
+          descricao,
+          vagas_disponiveis,
+          valor,
           publico_alvo_perfil,
           status,
-          coordenador_id(nome, descricao),
-          eventos_cursos(curso_id),
-          palestrantes(nome, tema, descricao)
+          coordenador_id
         `)
         .eq('status', 'aprovado')
         .neq('status', 'cancelado');
@@ -237,16 +235,39 @@ export default function Eventos() {
           return evento.cursos.some((curso: any) => curso.id === userCursoId);
         });
 
-        const eventosComInscricao = eventosFiltradosPorCurso.map((evento: any) => ({
-          ...evento,
-          inscrito: inscritosIds.has(evento.id),
-          pagamento_status: pagamentosPorEvento.get(evento.id) || null,
-          inscricao_pendente: pendentesIds.has(evento.id),
-          palestrantes: evento.palestrantes || [],
-          coordenador: evento.coordenador_id || null
-        }));
+        const eventosComDetalhes = await Promise.all(
+          eventosFiltradosPorCurso.map(async (evento: any) => {
+            let palestrantes: any[] = [];
+            let coordenador: any = null;
+            try {
+              const { data: palestrantesData } = await supabase
+                .from('palestrantes')
+                .select('nome, tema, descricao')
+                .eq('evento_id', evento.id);
+              palestrantes = palestrantesData || [];
+            } catch {}
+            try {
+              if (evento.coordenador_id) {
+                const { data: coord } = await supabase
+                  .from('coordenadores')
+                  .select('nome, descricao')
+                  .eq('id', evento.coordenador_id)
+                  .maybeSingle();
+                coordenador = coord || null;
+              }
+            } catch {}
+            return {
+              ...evento,
+              inscrito: inscritosIds.has(evento.id),
+              pagamento_status: pagamentosPorEvento.get(evento.id) || null,
+              inscricao_pendente: pendentesIds.has(evento.id),
+              palestrantes,
+              coordenador
+            };
+          })
+        );
 
-        setEventos(eventosComInscricao);
+        setEventos(eventosComDetalhes);
       } else {
         setEventos(data || []);
       }
@@ -310,6 +331,28 @@ export default function Eventos() {
     }
 
     setShowModal(true);
+
+    // Atualizar status da inscrição do evento selecionado em tempo real antes de exibir controles de pagamento
+    (async () => {
+      try {
+        const { data: insc } = await supabase
+          .from('inscricoes')
+          .select('status, pagamento_status')
+          .eq('evento_id', evento.id)
+          .eq('usuario_email', userEmail!)
+          .maybeSingle();
+        if (insc) {
+          setEventoSelecionado(prev => prev ? {
+            ...prev,
+            inscrito: insc.status === 'confirmada',
+            pagamento_status: (insc.pagamento_status as any) || prev.pagamento_status || null,
+            inscricao_pendente: insc.status === 'pendente'
+          } : prev);
+        }
+      } catch (e) {
+        console.warn('Falha ao sincronizar status de inscrição do evento selecionado', e);
+      }
+    })();
   };
 
   const handleCloseModal = () => {

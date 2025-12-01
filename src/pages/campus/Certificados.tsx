@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, Download, Calendar, User, FileText, Loader2 } from "lucide-react";
+import { Search, Printer, Calendar, User, FileText, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/contexts/ToastContext";
 import { format } from "date-fns";
@@ -20,6 +20,7 @@ interface Certificado {
   id: string;
   codigo_validacao: string;
   created_at: string;
+  hash_sha256?: string | null;
   usuarios: { nome_completo: string } | null;
   eventos: { titulo: string; carga_horaria: number } | null;
 }
@@ -39,6 +40,7 @@ export default function Certificados() {
         .select(`
           id,
           codigo_validacao,
+          hash_sha256,
           created_at,
           usuario_nome,
           usuario_email,
@@ -150,9 +152,17 @@ export default function Certificados() {
                       </TableCell>
                       <TableCell>{cert.eventos?.carga_horaria || "-"}h</TableCell>
                       <TableCell>
-                        <Button variant="outline" size="sm">
-                          <Download className="w-4 h-4 mr-2" />
-                          Baixar
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const hash = cert.hash_sha256 || cert.codigo_validacao;
+                            const url = `/certificado/${hash}`;
+                            window.open(url, '_blank');
+                          }}
+                        >
+                          <Printer className="w-4 h-4 mr-2" />
+                          Imprimir
                         </Button>
                       </TableCell>
                     </TableRow>

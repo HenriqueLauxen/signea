@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ interface Evento {
   longitude: number | null;
   raio_validacao_metros: number | null;
   codigo_qrcode: string | null;
+  organizador_email: string;
 }
 
 interface PalavraChave {
@@ -46,6 +47,9 @@ export default function DiasQRCodes() {
   const [eventoExpandido, setEventoExpandido] = useState<string | null>(null);
   const [qrCodes, setQrCodes] = useState<{ [key: string]: string }>({});
   const [filtroStatus, setFiltroStatus] = useState<StatusEvento | "todos">("todos");
+  const [gerandoPalavras, setGerandoPalavras] = useState<{ [key: string]: boolean }>({});
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const autoProcessadosRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     carregarEventos();
@@ -69,6 +73,7 @@ export default function DiasQRCodes() {
         setLoading(false);
         return;
       }
+      setUserEmail(session.user.email);
 
       // Buscar eventos aprovados (todos os organizadores podem ver todos os eventos)
       const { data: eventosData, error: eventosError } = await supabase
@@ -228,6 +233,137 @@ export default function DiasQRCodes() {
     }
     return listaDias;
   };
+
+  const gerarCodigoAleatorio = (tamanho = 6) => {
+    const caracteres = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let palavra = "";
+    for (let i = 0; i < tamanho; i++) {
+      palavra += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
+    }
+    return palavra.toUpperCase();
+  };
+
+  const gerarPalavrasChaveParaEvento = async (evento: EventoComPalavrasChave) => {
+    try {
+      setGerandoPalavras(prev => ({ ...prev, [evento.id]: true }));
+
+      const doFallbackUpsert = async () => {
+        const dias = getDiasEvento(evento);
+        const existentes = new Set(
+          (evento.palavras_chave || []).map(pc =>
+            format(new Date(pc.data_evento), 'yyyy-MM-dd')
+          )
+        );
+
+        const registros = dias
+          .map(d => format(d, 'yyyy-MM-dd'))
+          .filter(dataStr => !existentes.has(dataStr))
+          .map(dataStr => ({
+            evento_id: evento.id,
+            data_evento: dataStr,
+            palavra_chave: gerarCodigoAleatorio(6)
+          }));
+
+        if (registros.length === 0) {
+          toast.success('Todas as palavras-chave já foram geradas');
+          return;
+        }
+
+        const { error } = await supabase
+          .from('evento_palavras_chave')
+          .upsert(registros, { onConflict: 'evento_id,data_evento' });
+
+        if (error) {
+          const emsg = `${error.message || ''} ${error.details || ''}`.trim().toLowerCase();
+          if (emsg.includes('security') || emsg.includes('permission')) {
+            toast.error('Permissão negada para gerar palavras-chave neste evento');
+          } else if (emsg.includes('unique')) {
+            toast.error('Conflito de chave única em evento_id,data_evento');
+          } else if (emsg.includes('foreign key')) {
+            toast.error('Evento inexistente para o evento_id informado');
+          } else if (emsg.includes('invalid input syntax')) {
+            toast.error('Evento_id inválido (UUID malformado)');
+          } else {
+            toast.error('Erro ao gerar palavras-chave');
+          }
+          return;
+        }
+      };
+
+      // Primeiro tenta via RPC com SECURITY DEFINER (se existir no banco)
+      // Tenta com nome de parâmetro 'p_evento_id' e, se falhar, tenta 'evento_id'
+      let rpcError: any = null;
+      const rpc1 = await supabase.rpc('generate_missing_event_keys', { p_evento_id: evento.id });
+      rpcError = rpc1.error;
+      if (rpcError) {
+        const msg1 = `${rpcError.message || ''} ${rpcError.details || ''}`.trim().toLowerCase();
+        // Tenta com nome alternativo do parâmetro
+        const rpc2 = await supabase.rpc('generate_missing_event_keys', { evento_id: evento.id });
+        rpcError = rpc2.error;
+        if (!rpcError) {
+          toast.success('Palavras-chave geradas com sucesso');
+          await carregarEventos();
+          return;
+        }
+        const msg2 = `${rpcError.message || ''} ${rpcError.details || ''}`.trim().toLowerCase();
+        // Se a função não existir, faz fallback para upsert direto
+        if (msg1.includes('function generate_missing_event_keys') || msg1.includes('not found') ||
+            msg2.includes('function generate_missing_event_keys') || msg2.includes('not found')) {
+          await doFallbackUpsert();
+          if (!gerandoPalavras[evento.id]) return;
+        } else if (msg1.includes('permission') || msg1.includes('security') ||
+                   msg2.includes('permission') || msg2.includes('security')) {
+          await doFallbackUpsert();
+          return;
+        } else if (msg1.includes('foreign key') || msg2.includes('foreign key')) {
+          toast.error('Evento inexistente para o evento_id informado');
+          return;
+        } else if (msg1.includes('invalid input syntax') || msg2.includes('invalid input syntax')) {
+          toast.error('Evento_id inválido (UUID malformado)');
+          return;
+        }
+      }
+
+      if (rpcError) {
+        const msg = `${rpcError.message || ''} ${rpcError.details || ''}`.trim().toLowerCase();
+        // Se a função não existe, faz fallback para upsert direto
+        if (msg.includes('function generate_missing_event_keys') || msg.includes('not found')) {
+          await doFallbackUpsert();
+        } else if (msg.includes('permission') || msg.includes('security')) {
+          await doFallbackUpsert();
+          return;
+        } else {
+          toast.error('Erro ao gerar palavras-chave');
+          return;
+        }
+      }
+
+      toast.success('Palavras-chave geradas com sucesso');
+      await carregarEventos();
+    } catch (err: any) {
+      console.error('Erro inesperado ao gerar palavras-chave:', err);
+      toast.error(`Erro: ${err.message || 'Erro desconhecido'}`);
+    } finally {
+      setGerandoPalavras(prev => ({ ...prev, [evento.id]: false }));
+    }
+  };
+
+  useEffect(() => {
+    if (!userEmail || eventos.length === 0) return;
+    eventos.forEach(async (evento) => {
+      if (autoProcessadosRef.current.has(evento.id)) return;
+      const dias = getDiasEvento(evento);
+      const existentes = new Set(
+        (evento.palavras_chave || []).map(pc =>
+          format(new Date(pc.data_evento), 'yyyy-MM-dd')
+        )
+      );
+      if (existentes.size < dias.length) {
+        autoProcessadosRef.current.add(evento.id);
+        await gerarPalavrasChaveParaEvento(evento);
+      }
+    });
+  }, [eventos, userEmail]);
 
   const eventosFiltrados = eventos.filter(evento => {
     if (filtroStatus === "todos") return true;
@@ -398,8 +534,26 @@ export default function DiasQRCodes() {
                           Palavras-chave dos Dias
                         </h4>
                         {evento.palavras_chave.length === 0 ? (
-                          <Card className="p-6 text-center text-muted-foreground">
-                            <p>Nenhuma palavra-chave cadastrada para este evento</p>
+                          <Card className="p-6 text-center">
+                            <p className="text-muted-foreground mb-3">Nenhuma palavra-chave cadastrada para este evento</p>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => gerarPalavrasChaveParaEvento(evento)}
+                              disabled={gerandoPalavras[evento.id]}
+                            >
+                              {gerandoPalavras[evento.id] ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Gerando...
+                                </>
+                              ) : (
+                                <>
+                                  <Key className="w-4 h-4 mr-2" />
+                                  Gerar palavras-chave para os dias
+                                </>
+                              )}
+                            </Button>
                           </Card>
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

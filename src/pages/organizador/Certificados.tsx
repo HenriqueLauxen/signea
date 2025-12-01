@@ -26,6 +26,7 @@ interface Certificado {
   usuario_email: string;
   usuario_nome: string;
   codigo_validacao: string;
+  hash_sha256?: string | null;
   url_pdf: string | null;
   data_emissao: string;
 }
@@ -426,6 +427,23 @@ export default function Certificados() {
                       {format(new Date(cert.data_emissao), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                     </span>
                   </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="elegant"
+                    size="sm"
+                    onClick={() => {
+                      const hash = cert.hash_sha256 || cert.codigo_validacao;
+                      if (hash) {
+                        const url = `/certificado/${hash}`;
+                        window.open(url, '_blank');
+                      } else {
+                        toast.error('Hash do certificado não disponível');
+                      }
+                    }}
+                  >
+                    Imprimir
+                  </Button>
                 </div>
               </div>
             </Card>

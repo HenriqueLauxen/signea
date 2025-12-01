@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/contexts/ToastContext";
 import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
-import { format } from "date-fns";
+import { format, differenceInDays, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { DateRange } from "react-day-picker";
 import MapPicker from "@/components/MapPicker";
@@ -373,6 +373,39 @@ export default function CriarEvento() {
       if (error) {
         console.error('Erro do Supabase ao criar evento:', error);
         throw new Error(error.message);
+      }
+
+      if (evento) {
+        try {
+          const inicio = new Date(evento.data_inicio);
+          const fim = new Date(evento.data_fim);
+          const dias = differenceInDays(fim, inicio) + 1;
+          const registros = Array.from({ length: dias }).map((_, i) => {
+            const data = addDays(inicio, i);
+            const caracteres = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            let palavra = "";
+            for (let j = 0; j < 6; j++) {
+              palavra += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
+            }
+            return {
+              evento_id: evento.id,
+              data_evento: format(data, "yyyy-MM-dd"),
+              palavra_chave: palavra.toUpperCase()
+            };
+          });
+
+          const { error: chaveError } = await supabase
+            .from("evento_palavras_chave")
+            .upsert(registros, { onConflict: "evento_id,data_evento" });
+
+          if (chaveError) {
+            console.error("Erro ao gerar palavras-chave do evento:", chaveError);
+            toast.warning("Evento criado, mas houve erro ao gerar palavras‑chave");
+          }
+        } catch (e) {
+          console.error("Erro inesperado ao gerar palavras‑chave:", e);
+          toast.warning("Evento criado, mas houve erro ao gerar palavras‑chave");
+        }
       }
 
       // Salvar palestrantes na tabela relacionada

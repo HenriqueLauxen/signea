@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle } from "lucide-react";
 import { confirmarPagamento } from "@/lib/api/pagamento";
 import { useToast } from "@/contexts/ToastContext";
-import { PublicLayout } from "@/layouts/PublicLayout";
+ 
 
 export default function PagarSimulacao() {
   const [searchParams] = useSearchParams();
@@ -60,7 +60,6 @@ export default function PagarSimulacao() {
   };
 
   return (
-    <PublicLayout>
       <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="w-full max-w-md p-8 space-y-6">
           <div className="text-center space-y-4">
@@ -121,7 +120,6 @@ export default function PagarSimulacao() {
           </div>
         </Card>
       </div>
-    </PublicLayout>
   );
 }
 

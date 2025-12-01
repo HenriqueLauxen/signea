@@ -154,7 +154,10 @@ export function DatePicker({
           variant="ghost"
           size="icon"
           disabled={disabled}
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => {
+            isInteractingRef.current = true;
+            setIsOpen(!isOpen);
+          }}
           type="button"
           className="absolute right-0 h-12 w-10 hover:bg-transparent pointer-events-auto"
         >
@@ -169,10 +172,11 @@ export function DatePicker({
         sideOffset={4}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onInteractOutside={(e) => {
-          // Não fechar se estiver interagindo com o input
-          if (isInteractingRef.current || inputRef.current?.contains(e.target as Node)) {
+          if (inputRef.current?.contains(e.target as Node)) {
             e.preventDefault();
+            return;
           }
+          isInteractingRef.current = false;
         }}
       >
           <Calendar

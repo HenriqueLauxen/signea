@@ -35,7 +35,7 @@ interface Usuario {
   email: string;
   nome_completo: string;
   matricula: string;
-  tipo: string;
+  perfil: string;
   avatar_url: string | null;
   campus_id: number | null;
   curso_id: number | null;
@@ -69,7 +69,7 @@ export default function Usuarios() {
     nome_completo: "",
     email: "",
     matricula: "",
-    tipo: "user",
+    perfil: "user",
     campus_id: "",
     curso_id: ""
   });
@@ -91,12 +91,32 @@ export default function Usuarios() {
         `)
         .order('nome_completo');
 
-      if (error) throw error;
+      if (error) {
+        const { data: simpleData, error: simpleError } = await supabase
+          .from('usuarios')
+          .select('*')
+          .order('nome_completo');
 
-      setUsuarios(data || []);
-    } catch (error) {
+        if (simpleError) throw simpleError;
+
+        const formatted = (simpleData || []).map((u: any) => ({
+          ...u,
+          campus: u.campus_id ? (listaCampus.find((c) => c.id === u.campus_id) || null) : null,
+          cursos: u.curso_id ? (listaCursos.find((c) => c.id === u.curso_id) || null) : null,
+        }));
+        setUsuarios(formatted);
+      } else {
+        setUsuarios(data || []);
+      }
+    } catch (error: any) {
       console.error('Erro ao carregar usuários:', error);
-      toast.error('Erro ao carregar usuários');
+      const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
+      if (msg.includes('permission') || msg.includes('security')) {
+        toast.info('Sem permissão para visualizar usuários');
+      } else {
+        toast.error('Erro ao carregar usuários');
+      }
+      setUsuarios([]);
     } finally {
       setLoading(false);
     }
@@ -111,8 +131,10 @@ export default function Usuarios() {
   };
 
   useEffect(() => {
-    carregarUsuarios();
-    fetchLists();
+    (async () => {
+      await fetchLists();
+      await carregarUsuarios();
+    })();
   }, []);
 
   const handleEdit = (user: Usuario) => {
@@ -121,7 +143,7 @@ export default function Usuarios() {
       nome_completo: user.nome_completo || "",
       email: user.email || "",
       matricula: user.matricula || "",
-      tipo: user.tipo || "user",
+      perfil: user.perfil || "user",
       campus_id: user.campus_id?.toString() || "",
       curso_id: user.curso_id?.toString() || ""
     });
@@ -136,26 +158,44 @@ export default function Usuarios() {
 
       const updates: any = {
         nome_completo: formData.nome_completo,
-        email: formData.email,
         matricula: formData.matricula,
-        tipo: formData.tipo,
+        perfil: formData.perfil,
         campus_id: formData.campus_id ? parseInt(formData.campus_id) : null,
         curso_id: formData.curso_id ? parseInt(formData.curso_id) : null
       };
 
-      const { error } = await supabase
+      const changed = (
+        (editingUser.nome_completo || '') !== (updates.nome_completo || '') ||
+        (editingUser.matricula || '') !== (updates.matricula || '') ||
+        (editingUser.perfil || '') !== (updates.perfil || '') ||
+        (editingUser.campus_id ?? null) !== (updates.campus_id ?? null) ||
+        (editingUser.curso_id ?? null) !== (updates.curso_id ?? null)
+      );
+
+      const { data: dataRes, error: errorRes } = await supabase
         .from('usuarios')
         .update(updates)
-        .eq('email', editingUser.email);
+        .eq('email', editingUser.email)
+        .select('email')
+        .maybeSingle();
 
-      if (error) throw error;
+      if (errorRes) throw errorRes;
+      if (!dataRes?.email) {
+        if (!changed) {
+          toast.info('Nenhuma alteração para aplicar');
+        } else {
+          toast.error('Sem permissão para alterar este usuário');
+        }
+        return;
+      }
 
       toast.success("Usuário atualizado com sucesso!");
       setShowEditModal(false);
       carregarUsuarios(); // Refresh list
     } catch (error: any) {
       console.error("Erro ao atualizar usuário:", error);
-      toast.error("Erro ao atualizar usuário");
+      const msg = `${error?.message || ''} ${error?.details || ''}`.trim();
+      toast.error(msg ? `Erro ao atualizar usuário: ${msg}` : "Erro ao atualizar usuário");
     } finally {
       setSaving(false);
     }
@@ -240,7 +280,7 @@ export default function Usuarios() {
               </TableRow>
             ) : (
               filteredUsers.map((user) => (
-                <TableRow key={user.id}>
+                <TableRow key={user.email}>
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar>
@@ -279,7 +319,7 @@ export default function Usuarios() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    {getPermissionBadge(user.tipo)}
+                    {getPermissionBadge(user.perfil)}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
@@ -318,7 +358,7 @@ export default function Usuarios() {
                 <Label>E-mail</Label>
                 <Input
                   value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  disabled
                 />
               </div>
               <div className="space-y-2">
@@ -333,15 +373,15 @@ export default function Usuarios() {
             <div className="space-y-2">
               <Label>Perfil</Label>
               <Select
-                value={formData.tipo}
-                onValueChange={(value) => setFormData({ ...formData, tipo: value })}
+                value={formData.perfil}
+                onValueChange={(value) => setFormData({ ...formData, perfil: value })}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="user">Usuário</SelectItem>
-                  <SelectItem value="organizer">Organizador</SelectItem>
+                  <SelectItem value="organizador">Organizador</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
               </Select>

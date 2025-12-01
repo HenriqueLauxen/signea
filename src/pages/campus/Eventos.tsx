@@ -44,12 +44,28 @@ export default function Eventos() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        const msg = `${(error as any)?.message || ''} ${(error as any)?.details || ''}`.toLowerCase();
+        if (msg.includes('permission') || msg.includes('security')) {
+          toast.info('Sem permissão para visualizar eventos');
+          setEventos([]);
+          return;
+        }
+        // Fallback: tentar carregar colunas básicas
+        const { data: basicData, error: basicError } = await supabase
+          .from('eventos')
+          .select('id, titulo, descricao, status, banner_url, created_at')
+          .order('created_at', { ascending: false });
+        if (basicError) throw basicError;
+        setEventos(basicData || []);
+        return;
+      }
 
       setEventos(data || []);
     } catch (error) {
       console.error('Erro ao carregar eventos:', error);
-      toast.error('Erro ao carregar eventos');
+      const msg = `${(error as any)?.message || ''} ${(error as any)?.details || ''}`.trim();
+      toast.error(msg ? `Erro ao carregar eventos: ${msg}` : 'Erro ao carregar eventos');
     } finally {
       setLoading(false);
     }
